@@ -1,0 +1,17 @@
+[
+  {
+    "season": "2015/16",
+    "match_id": 1,
+    "match_date": "2015-08-08",
+    "matchweek": 1,
+    "home": "Synthetic Home FC",
+    "away": "Synthetic Away FC",
+    "home_score": 2,
+    "away_score": 1,
+    "methods": [
+      "baseline",
+      "vaep"
+    ],
+    "path": "2015-16/1.json"
+  }
+]
