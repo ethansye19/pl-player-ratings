@@ -1,0 +1,673 @@
+{
+  "schema_version": 1,
+  "note": "SYNTHETIC sample payload for frontend development and tests. Not real data.",
+  "source": "StatsBomb Open Data",
+  "season": "2015/16",
+  "competition": "Premier League",
+  "match_id": 1,
+  "match_date": "2015-08-08",
+  "matchweek": 1,
+  "home": {
+    "team_id": 1,
+    "team": "Synthetic Home FC",
+    "score": 2,
+    "formation": "433"
+  },
+  "away": {
+    "team_id": 2,
+    "team": "Synthetic Away FC",
+    "score": 1,
+    "formation": "4231"
+  },
+  "methods": [
+    "baseline",
+    "vaep"
+  ],
+  "players": [
+    {
+      "player_id": 1,
+      "player_name": "Synthetic Home 1",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 1,
+      "position": "Goalkeeper",
+      "position_group": "GK",
+      "is_starter": true,
+      "jersey_number": 1,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 6.5,
+        "vaep": 5.7
+      },
+      "raw_scores": {
+        "baseline": 3.18,
+        "vaep": -0.639
+      }
+    },
+    {
+      "player_id": 2,
+      "player_name": "Synthetic Home 2",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 2,
+      "position": "Right Back",
+      "position_group": "DEF",
+      "is_starter": true,
+      "jersey_number": 2,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 6.6,
+        "vaep": 7.8
+      },
+      "raw_scores": {
+        "baseline": 0.75,
+        "vaep": -0.085
+      }
+    },
+    {
+      "player_id": 3,
+      "player_name": "Synthetic Home 3",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 3,
+      "position": "Right Center Back",
+      "position_group": "DEF",
+      "is_starter": true,
+      "jersey_number": 3,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 6.5,
+        "vaep": 6.9
+      },
+      "raw_scores": {
+        "baseline": -2.26,
+        "vaep": 0.047
+      }
+    },
+    {
+      "player_id": 4,
+      "player_name": "Synthetic Home 4",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 5,
+      "position": "Left Center Back",
+      "position_group": "DEF",
+      "is_starter": true,
+      "jersey_number": 4,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 6.5,
+        "vaep": 7.0
+      },
+      "raw_scores": {
+        "baseline": 0.33,
+        "vaep": 0.331
+      }
+    },
+    {
+      "player_id": 5,
+      "player_name": "Synthetic Home 5",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 6,
+      "position": "Left Back",
+      "position_group": "DEF",
+      "is_starter": true,
+      "jersey_number": 5,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 7.0,
+        "vaep": 7.4
+      },
+      "raw_scores": {
+        "baseline": -0.2,
+        "vaep": -0.201
+      }
+    },
+    {
+      "player_id": 6,
+      "player_name": "Synthetic Home 6",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 13,
+      "position": "Right Center Midfield",
+      "position_group": "MID",
+      "is_starter": true,
+      "jersey_number": 6,
+      "minutes": 65.0,
+      "minute_on": 0.0,
+      "minute_off": 65.0,
+      "ratings": {
+        "baseline": 6.2,
+        "vaep": 6.2
+      },
+      "raw_scores": {
+        "baseline": -3.09,
+        "vaep": -0.625
+      }
+    },
+    {
+      "player_id": 7,
+      "player_name": "Synthetic Home 7",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 10,
+      "position": "Center Defensive Midfield",
+      "position_group": "MID",
+      "is_starter": true,
+      "jersey_number": 7,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 6.6,
+        "vaep": 6.4
+      },
+      "raw_scores": {
+        "baseline": -1.21,
+        "vaep": -0.138
+      }
+    },
+    {
+      "player_id": 8,
+      "player_name": "Synthetic Home 8",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 15,
+      "position": "Left Center Midfield",
+      "position_group": "MID",
+      "is_starter": true,
+      "jersey_number": 8,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 6.1,
+        "vaep": 7.6
+      },
+      "raw_scores": {
+        "baseline": 3.05,
+        "vaep": 0.375
+      }
+    },
+    {
+      "player_id": 9,
+      "player_name": "Synthetic Home 9",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 17,
+      "position": "Right Wing",
+      "position_group": "FWD",
+      "is_starter": true,
+      "jersey_number": 9,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 7.4,
+        "vaep": 7.2
+      },
+      "raw_scores": {
+        "baseline": 2.59,
+        "vaep": 0.13
+      }
+    },
+    {
+      "player_id": 10,
+      "player_name": "Synthetic Home 10",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 23,
+      "position": "Striker",
+      "position_group": "FWD",
+      "is_starter": true,
+      "jersey_number": 10,
+      "minutes": 65.0,
+      "minute_on": 0.0,
+      "minute_off": 65.0,
+      "ratings": {
+        "baseline": 7.1,
+        "vaep": 6.0
+      },
+      "raw_scores": {
+        "baseline": -0.9,
+        "vaep": -0.413
+      }
+    },
+    {
+      "player_id": 11,
+      "player_name": "Synthetic Home 11",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 21,
+      "position": "Left Wing",
+      "position_group": "FWD",
+      "is_starter": true,
+      "jersey_number": 11,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 5.8,
+        "vaep": 7.2
+      },
+      "raw_scores": {
+        "baseline": -0.09,
+        "vaep": 0.787
+      }
+    },
+    {
+      "player_id": 12,
+      "player_name": "Synthetic Home 12",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 14,
+      "position": "Center Midfield",
+      "position_group": "MID",
+      "is_starter": false,
+      "jersey_number": 12,
+      "minutes": 25.0,
+      "minute_on": 69.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 5.7,
+        "vaep": 7.6
+      },
+      "raw_scores": {
+        "baseline": 0.69,
+        "vaep": 0.386
+      }
+    },
+    {
+      "player_id": 13,
+      "player_name": "Synthetic Home 13",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 23,
+      "position": "Striker",
+      "position_group": "FWD",
+      "is_starter": false,
+      "jersey_number": 13,
+      "minutes": 12.0,
+      "minute_on": 82.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 7.8,
+        "vaep": 7.1
+      },
+      "raw_scores": {
+        "baseline": -2.43,
+        "vaep": -0.27
+      }
+    },
+    {
+      "player_id": 14,
+      "player_name": "Synthetic Home 14",
+      "team_id": 1,
+      "team": "Synthetic Home FC",
+      "side": "home",
+      "position_id": 4,
+      "position": "Center Back",
+      "position_group": "DEF",
+      "is_starter": false,
+      "jersey_number": 14,
+      "minutes": 6.0,
+      "minute_on": 88.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": null,
+        "vaep": null
+      },
+      "raw_scores": {
+        "baseline": -0.26,
+        "vaep": -0.927
+      }
+    },
+    {
+      "player_id": 15,
+      "player_name": "Synthetic Away 1",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 1,
+      "position": "Goalkeeper",
+      "position_group": "GK",
+      "is_starter": true,
+      "jersey_number": 1,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 6.2,
+        "vaep": 5.7
+      },
+      "raw_scores": {
+        "baseline": -0.15,
+        "vaep": 0.636
+      }
+    },
+    {
+      "player_id": 16,
+      "player_name": "Synthetic Away 2",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 2,
+      "position": "Right Back",
+      "position_group": "DEF",
+      "is_starter": true,
+      "jersey_number": 2,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 6.3,
+        "vaep": 6.6
+      },
+      "raw_scores": {
+        "baseline": 2.41,
+        "vaep": 0.28
+      }
+    },
+    {
+      "player_id": 17,
+      "player_name": "Synthetic Away 3",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 3,
+      "position": "Right Center Back",
+      "position_group": "DEF",
+      "is_starter": true,
+      "jersey_number": 3,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 6.4,
+        "vaep": 7.6
+      },
+      "raw_scores": {
+        "baseline": 4.01,
+        "vaep": -0.344
+      }
+    },
+    {
+      "player_id": 18,
+      "player_name": "Synthetic Away 4",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 5,
+      "position": "Left Center Back",
+      "position_group": "DEF",
+      "is_starter": true,
+      "jersey_number": 4,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 5.9,
+        "vaep": 7.5
+      },
+      "raw_scores": {
+        "baseline": -2.68,
+        "vaep": 0.672
+      }
+    },
+    {
+      "player_id": 19,
+      "player_name": "Synthetic Away 5",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 6,
+      "position": "Left Back",
+      "position_group": "DEF",
+      "is_starter": true,
+      "jersey_number": 5,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 5.6,
+        "vaep": 5.5
+      },
+      "raw_scores": {
+        "baseline": 1.95,
+        "vaep": -0.063
+      }
+    },
+    {
+      "player_id": 20,
+      "player_name": "Synthetic Away 6",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 9,
+      "position": "Right Defensive Midfield",
+      "position_group": "MID",
+      "is_starter": true,
+      "jersey_number": 6,
+      "minutes": 65.0,
+      "minute_on": 0.0,
+      "minute_off": 65.0,
+      "ratings": {
+        "baseline": 7.4,
+        "vaep": 7.4
+      },
+      "raw_scores": {
+        "baseline": 1.67,
+        "vaep": 0.553
+      }
+    },
+    {
+      "player_id": 21,
+      "player_name": "Synthetic Away 7",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 11,
+      "position": "Left Defensive Midfield",
+      "position_group": "MID",
+      "is_starter": true,
+      "jersey_number": 7,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 8.6,
+        "vaep": 6.2
+      },
+      "raw_scores": {
+        "baseline": 0.71,
+        "vaep": 0.136
+      }
+    },
+    {
+      "player_id": 22,
+      "player_name": "Synthetic Away 8",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 18,
+      "position": "Right Attacking Midfield",
+      "position_group": "MID",
+      "is_starter": true,
+      "jersey_number": 8,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 5.9,
+        "vaep": 5.9
+      },
+      "raw_scores": {
+        "baseline": -0.99,
+        "vaep": 0.327
+      }
+    },
+    {
+      "player_id": 23,
+      "player_name": "Synthetic Away 9",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 19,
+      "position": "Center Attacking Midfield",
+      "position_group": "MID",
+      "is_starter": true,
+      "jersey_number": 9,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 4.7,
+        "vaep": 7.0
+      },
+      "raw_scores": {
+        "baseline": 2.85,
+        "vaep": 1.04
+      }
+    },
+    {
+      "player_id": 24,
+      "player_name": "Synthetic Away 10",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 20,
+      "position": "Left Attacking Midfield",
+      "position_group": "MID",
+      "is_starter": true,
+      "jersey_number": 10,
+      "minutes": 65.0,
+      "minute_on": 0.0,
+      "minute_off": 65.0,
+      "ratings": {
+        "baseline": 7.3,
+        "vaep": 5.6
+      },
+      "raw_scores": {
+        "baseline": 0.09,
+        "vaep": -0.305
+      }
+    },
+    {
+      "player_id": 25,
+      "player_name": "Synthetic Away 11",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 23,
+      "position": "Striker",
+      "position_group": "FWD",
+      "is_starter": true,
+      "jersey_number": 11,
+      "minutes": 94.0,
+      "minute_on": 0.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 5.3,
+        "vaep": 6.1
+      },
+      "raw_scores": {
+        "baseline": 0.68,
+        "vaep": 0.624
+      }
+    },
+    {
+      "player_id": 26,
+      "player_name": "Synthetic Away 12",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 14,
+      "position": "Center Midfield",
+      "position_group": "MID",
+      "is_starter": false,
+      "jersey_number": 12,
+      "minutes": 25.0,
+      "minute_on": 69.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 7.4,
+        "vaep": 6.6
+      },
+      "raw_scores": {
+        "baseline": 1.12,
+        "vaep": 0.458
+      }
+    },
+    {
+      "player_id": 27,
+      "player_name": "Synthetic Away 13",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 23,
+      "position": "Striker",
+      "position_group": "FWD",
+      "is_starter": false,
+      "jersey_number": 13,
+      "minutes": 12.0,
+      "minute_on": 82.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": 6.5,
+        "vaep": 5.7
+      },
+      "raw_scores": {
+        "baseline": -2.19,
+        "vaep": -0.849
+      }
+    },
+    {
+      "player_id": 28,
+      "player_name": "Synthetic Away 14",
+      "team_id": 2,
+      "team": "Synthetic Away FC",
+      "side": "away",
+      "position_id": 4,
+      "position": "Center Back",
+      "position_group": "DEF",
+      "is_starter": false,
+      "jersey_number": 14,
+      "minutes": 6.0,
+      "minute_on": 88.0,
+      "minute_off": 94.0,
+      "ratings": {
+        "baseline": null,
+        "vaep": null
+      },
+      "raw_scores": {
+        "baseline": 0.26,
+        "vaep": -0.298
+      }
+    }
+  ],
+  "credits": "Data: StatsBomb Open Data (https://github.com/statsbomb/open-data)"
+}

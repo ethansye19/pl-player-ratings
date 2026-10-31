@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Per-match player ratings (3.0 to 10.0) for the 2015/16 Premier League, with a hand-weighted baseline model and a VAEP model side by side. Data: StatsBomb Open Data.">
+  <title>Premier League match ratings</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-state="loading">
+  <a class="skip-link" href="#main">Skip to the match</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <h1>Match ratings</h1>
+        <p class="tagline">Premier League player ratings, 3.0&ndash;10.0</p>
+      </div>
+
+      <div class="controls" role="group" aria-label="Choose a match">
+        <div class="field" id="field-season" hidden>
+          <label for="season-select">Season</label>
+          <select id="season-select"></select>
+        </div>
+        <div class="field">
+          <label for="team-select">Team</label>
+          <select id="team-select"><option value="">All teams</option></select>
+        </div>
+        <div class="field field-match">
+          <label for="match-select">Match</label>
+          <div class="match-picker">
+            <button type="button" id="prev-match" class="step" aria-label="Previous match" disabled>&lsaquo;</button>
+            <select id="match-select" disabled><option>Loading matches&hellip;</option></select>
+            <button type="button" id="next-match" class="step" aria-label="Next match" disabled>&rsaquo;</button>
+          </div>
+        </div>
+      </div>
+      <div class="field field-method">
+        <span class="label" id="method-label">Rating method</span>
+        <fieldset class="segmented" id="method-toggle" aria-labelledby="method-label" disabled>
+          <legend class="visually-hidden">Rating method</legend>
+          <label class="seg"><input type="radio" name="method" value="baseline" checked><span>Baseline</span></label>
+          <label class="seg"><input type="radio" name="method" value="vaep"><span>VAEP</span></label>
+        </fieldset>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div id="banner" class="banner" role="status" hidden></div>
+    <div id="notice" class="notice" role="alert" hidden></div>
+
+    <section id="match-head" class="card scoreboard" aria-label="Match summary">
+      <p class="loading">Loading match ratings&hellip;</p>
+    </section>
+
+    <div class="layout">
+      <section class="card pitch-card" aria-labelledby="lineups-title">
+        <div class="card-head">
+          <h2 id="lineups-title">Lineups</h2>
+          <p class="muted" id="method-note"></p>
+        </div>
+
+        <div class="pitch-wrap">
+          <svg id="pitch" class="pitch" viewBox="-24 -24 592 888" role="group"
+               aria-label="Pitch: home team in the bottom half attacking upwards, away team in the top half attacking downwards">
+            <rect class="pitch-edge" x="-24" y="-24" width="592" height="888"/>
+            <g class="grass" aria-hidden="true">
+              <rect class="stripe-a" x="0" y="0" width="544" height="840"/>
+              <rect class="stripe-b" x="0" y="70" width="544" height="70"/>
+              <rect class="stripe-b" x="0" y="210" width="544" height="70"/>
+              <rect class="stripe-b" x="0" y="350" width="544" height="70"/>
+              <rect class="stripe-b" x="0" y="490" width="544" height="70"/>
+              <rect class="stripe-b" x="0" y="630" width="544" height="70"/>
+              <rect class="stripe-b" x="0" y="770" width="544" height="70"/>
+            </g>
+            <g class="markings" aria-hidden="true">
+              <rect class="line" x="0" y="0" width="544" height="840"/>
+              <line class="line" x1="0" y1="420" x2="544" y2="420"/>
+              <circle class="line" cx="272" cy="420" r="73.2"/>
+              <circle class="spot" cx="272" cy="420" r="3"/>
+              <rect class="line" x="110.72" y="0" width="322.56" height="132"/>
+              <rect class="line" x="198.72" y="0" width="146.56" height="44"/>
+              <circle class="spot" cx="272" cy="88" r="3"/>
+              <path class="line" d="M 213.5 132 A 73.2 73.2 0 0 0 330.5 132"/>
+              <rect class="line" x="110.72" y="708" width="322.56" height="132"/>
+              <rect class="line" x="198.72" y="796" width="146.56" height="44"/>
+              <circle class="spot" cx="272" cy="752" r="3"/>
+              <path class="line" d="M 213.5 708 A 73.2 73.2 0 0 1 330.5 708"/>
+              <path class="line" d="M 8 0 A 8 8 0 0 1 0 8"/>
+              <path class="line" d="M 536 0 A 8 8 0 0 0 544 8"/>
+              <path class="line" d="M 0 832 A 8 8 0 0 1 8 840"/>
+              <path class="line" d="M 544 832 A 8 8 0 0 0 536 840"/>
+              <rect class="goal" x="242.72" y="-16" width="58.56" height="16"/>
+              <rect class="goal" x="242.72" y="840" width="58.56" height="16"/>
+            </g>
+            <text id="note-away" class="pitch-note" x="12" y="28"></text>
+            <text id="note-away-form" class="pitch-note end" x="532" y="28"></text>
+            <text id="note-home" class="pitch-note" x="12" y="826"></text>
+            <text id="note-home-form" class="pitch-note end" x="532" y="826"></text>
+            <g id="markers"></g>
+          </svg>
+        </div>
+
+        <ul class="legend" aria-label="Rating colours">
+          <li><span class="swatch band-red" aria-hidden="true"></span>Below 6.0</li>
+          <li><span class="swatch band-orange" aria-hidden="true"></span>6.0&ndash;6.9</li>
+          <li><span class="swatch band-green" aria-hidden="true"></span>7.0&ndash;7.9</li>
+          <li><span class="swatch band-blue" aria-hidden="true"></span>8.0 and above</li>
+          <li><span class="swatch band-unrated" aria-hidden="true"></span>Unrated (under 10 min)</li>
+        </ul>
+
+        <div class="subs-grid">
+          <section class="subs" id="subs-home" aria-labelledby="subs-home-title">
+            <h3 id="subs-home-title">Home substitutes</h3>
+            <ol class="sub-list"></ol>
+          </section>
+          <section class="subs" id="subs-away" aria-labelledby="subs-away-title">
+            <h3 id="subs-away-title">Away substitutes</h3>
+            <ol class="sub-list"></ol>
+          </section>
+        </div>
+      </section>
+
+      <section class="card table-card" aria-labelledby="table-title">
+        <div class="card-head">
+          <h2 id="table-title">All players</h2>
+          <p class="muted" id="sort-note"></p>
+        </div>
+        <div class="table-scroll">
+          <table id="players-table" class="players">
+            <caption class="visually-hidden" id="table-caption">Players in this match</caption>
+            <thead>
+              <tr>
+                <th scope="col" class="c-rank">#</th>
+                <th scope="col" class="c-name">Player</th>
+                <th scope="col" class="c-team">Team</th>
+                <th scope="col" class="c-pos">Pos</th>
+                <th scope="col" class="c-min">Min</th>
+                <th scope="col" class="c-rating" id="th-rating">Rating</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p id="credit" class="credit">Data: <a href="https://github.com/statsbomb/open-data" target="_blank" rel="noopener noreferrer">StatsBomb Open Data</a></p>
+    <p class="muted fine">Ratings are the output of two statistical models, not StatsBomb's. A player gets a rating only after 10 minutes on the pitch.</p>
+  </footer>
+
+  <div id="sr-status" class="visually-hidden" role="status" aria-live="polite"></div>
+  <noscript><p class="noscript">This page needs JavaScript to draw the lineups. Data: StatsBomb Open Data.</p></noscript>
+  <script src="app.js"></script>
+</body>
+</html>
