@@ -44,7 +44,7 @@ AERIAL_WON_FLAGS = ("clearance_aerial_won", "pass_aerial_won", "shot_aerial_won"
 EVENT_COLUMNS: list[str] = [
     "match_id", "team_id", "player_id", "period", "timestamp", "type",
     "shot_outcome", "shot_type", "shot_statsbomb_xg",
-    "pass_outcome", "pass_type", "pass_goal_assist", "pass_shot_assist",
+    "pass_outcome", "pass_type", "pass_goal_assist", "pass_shot_assist", "pass_cross",
     "location_x", "pass_end_x", "carry_end_x",
     "dribble_outcome", "duel_type", "duel_outcome", "interception_outcome",
     "ball_recovery_recovery_failure", *AERIAL_WON_FLAGS,
@@ -136,7 +136,7 @@ def _player_event_stats(events: pd.DataFrame) -> pd.DataFrame:
         "penalties_won": typ.eq("Foul Won") & _flag(pe["foul_won_penalty"]),
         "penalties_missed": penalty & ~goal,
         "passes_completed": pass_completed,
-        "passes_incomplete": is_pass & pe["pass_outcome"].isin(INCOMPLETE_PASS_OUTCOMES),
+        "passes_incomplete": is_pass & pe["pass_outcome"].isin(INCOMPLETE_PASS_OUTCOMES) & ~_flag(pe["pass_cross"]),
         "progressive_passes": pass_completed
         & ~pe["pass_type"].isin(SET_PIECE_PASS_TYPES)
         & (pe["location_x"] >= DEFENSIVE_40_X)
