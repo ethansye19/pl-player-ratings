@@ -10,8 +10,82 @@ import pandas as pd
 import pytest
 
 from src.contract import CONTRACT_COLUMNS, SEED, validate_contract
+from src.vaep.labels import outcome_labels, shot_goal_probability, xg_labels
 from src.vaep.rate import action_values_for_match, rate_match
 from src.vaep.splits import Split, fold_for_match, make_cv_splits, make_holdout_split, splits_payload
+
+RESULT_IDS = {"fail": 0, "success": 1, "offside": 2, "owngoal": 3}  # socceraction.spadl.config.results order
+
+
+def _actions(rows) -> pd.DataFrame:
+    """SYNTHETIC one-game action frame from (team_id, type_name, result_name, event_id) tuples."""
+    frame = pd.DataFrame(rows, columns=["team_id", "type_name", "result_name", "original_event_id"])
+    frame["result_id"] = frame["result_name"].map(RESULT_IDS)
+    frame["game_id"] = 1
+    frame["action_id"] = range(len(frame))
+    return frame
+
+
+# ------------------------------------------------------------------------- labels
+def test_xg_labels_with_outcomes_reproduce_socceraction_labels():
+    rng = np.random.default_rng(SEED)
+    rows = []
+    for i in range(300):
+        team = int(rng.integers(1, 3))
+        kind = rng.choice(["pass", "pass", "dribble", "shot", "shot_penalty", "shot_freekick"], p=[0.4, 0.25, 0.15, 0.12, 0.04, 0.04])
+        if kind.startswith("shot"):
+            result = rng.choice(["fail", "success", "owngoal"], p=[0.6, 0.3, 0.1])  # socceraction only sees own goals on shots
+        else:
+            result = "success"
+        rows.append((team, kind, result, f"ev{i}"))
+    actions = _actions(rows)
+    soft, coverage = xg_labels(actions, pd.Series(dtype="float64"))  # no xG anywhere -> outcome fallback
+    binary = outcome_labels(actions)
+    assert coverage["shots_without_xg"] == coverage["shots"] > 0
+    assert set(np.unique(soft.to_numpy())) <= {0.0, 1.0}
+    assert np.array_equal(soft["scores"].to_numpy() == 1.0, binary["scores"].to_numpy())
+    assert np.array_equal(soft["concedes"].to_numpy() == 1.0, binary["concedes"].to_numpy())
+
+
+def test_xg_labels_combine_chances_within_the_window_and_respect_teams():
+    actions = _actions(
+        [(1, "pass", "success", "e0"), (1, "shot", "fail", "e1"), (2, "pass", "success", "e2"),
+         (1, "shot", "success", "e3"), (2, "shot", "fail", "e4")]
+    )
+    xg = pd.Series({"e1": 0.3, "e3": 0.5, "e4": 0.2})
+    soft, coverage = xg_labels(actions, xg)
+    assert coverage == {"shots": 3, "shots_without_xg": 0, "own_goals": 0}
+    # team 1's first action: its two shots (0.3, 0.5) combine; team 2's shot (0.2) is a conceding chance
+    assert soft.loc[0, "scores"] == pytest.approx(1 - 0.7 * 0.5)
+    assert soft.loc[0, "concedes"] == pytest.approx(0.2)
+    # the goal itself is worth its xG, not 1.0; team 2's pass sees only team 2's chance
+    assert soft.loc[3, "scores"] == pytest.approx(0.5)
+    assert soft.loc[2, "scores"] == pytest.approx(0.2) and soft.loc[2, "concedes"] == pytest.approx(0.5)
+    # the last action's own shot counts for itself and nothing after it exists
+    assert soft.loc[4, "scores"] == pytest.approx(0.2) and soft.loc[4, "concedes"] == 0.0
+
+
+def test_xg_labels_window_is_ten_actions_and_own_goals_count_one():
+    rows = [(1, "pass", "success", f"p{i}") for i in range(12)]
+    rows[9] = (1, "shot", "fail", "late")  # 10th action of the window of action 0 -> inside
+    rows[11] = (2, "bad_touch", "owngoal", "og")  # own goal by team 2: 1.0 for team 1, conceded by team 2
+    rows.insert(0, (1, "shot", "fail", "first"))  # shifts everything by one: 'late' becomes action 10 -> outside for action 0
+    actions = _actions(rows)
+    soft, coverage = xg_labels(actions, pd.Series({"first": 0.1, "late": 0.4}))
+    assert coverage["own_goals"] == 1
+    assert soft.loc[0, "scores"] == pytest.approx(0.1)  # 'late' (index 10) is outside action 0's window
+    assert soft.loc[1, "scores"] == pytest.approx(0.4)  # ... but inside action 1's
+    assert soft.loc[3, "scores"] == pytest.approx(1.0)  # team 1 state 10 actions before the own goal benefits fully
+    assert soft.loc[2, "scores"] == pytest.approx(0.4)  # one action earlier the own goal is outside the window
+    assert soft.loc[12, "concedes"] == pytest.approx(1.0)  # team 2's own action: an own goal is a goal conceded
+    assert soft.loc[12, "scores"] == 0.0
+
+
+def test_shot_goal_probability_falls_back_to_the_outcome_only_without_xg():
+    actions = _actions([(1, "shot", "success", "known"), (1, "shot", "success", "unknown"), (1, "shot", "fail", "none")])
+    prob, coverage = shot_goal_probability(actions, pd.Series({"known": 0.25}))
+    assert prob.tolist() == pytest.approx([0.25, 1.0, 0.0])
+    assert coverage == {"shots": 3, "shots_without_xg": 2, "own_goals": 0}
 
 
 # ------------------------------------------------------------------------- splits
