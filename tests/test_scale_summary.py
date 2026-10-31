@@ -97,6 +97,9 @@ def test_curve_statistics_table_has_the_promised_rows():
     assert stats["median rating"] == "6.5"
     assert stats["most common rating"].startswith("6.4 (")
     assert set(stats) >= {"6.0 to 7.5", "7.0 or better", "8.0 or better", "9.0 or better", f"{RATING_MAX:.1f}", "below 5.0", "below 4.0"}
+    bands = [stats[k] for k in ("red band (below 6.0)", "orange band (6.0 to 6.9)", "green band (7.0 to 7.9)", "blue band (8.0 or better)")]
+    assert sum(float(v.rstrip("%")) for v in bands) == pytest.approx(100.0, abs=0.25)
+    assert stats["blue band (8.0 or better)"] == stats["8.0 or better"]      # same threshold, same share
     lines = format_curve_statistics().splitlines()
     assert lines[0] == "| statistic | value |" and len(lines) == len(stats) + 2
 

@@ -135,8 +135,10 @@ def _reject_constant(name: str) -> None:
 class PercentileScaler:
     """Fit once on a reference set of raw scores, then map raw scores to ratings row by row.
 
-    >>> scaler = PercentileScaler().fit(reference)        # calibration, whole season
-    >>> ratings = scaler.transform(one_match)             # per-match, frozen artefacts only
+    Typical use (``reference`` is a contract-format frame; ``one_match`` any rows to rate)::
+
+        scaler = PercentileScaler().fit(reference)    # calibration, whole season
+        ratings = scaler.transform(one_match)         # per-match, frozen artefacts only
     """
 
     def __init__(self) -> None:

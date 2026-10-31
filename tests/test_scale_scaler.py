@@ -360,3 +360,47 @@ def test_every_position_group_can_be_saved_and_reloaded(tmp_path):
     reloaded = PercentileScaler.load(scaler.save(tmp_path / "all.json"))
     assert reloaded.groups == POSITION_GROUPS
     assert_frame_equal(reloaded.transform(df), scaler.transform(df))
+
+
+# ------------------------------------------------------- independent oracle
+def _brute_force_rating(reference: np.ndarray, x: float) -> float:
+    """Mid-rank percentile with linear interpolation, written the long way (no np.interp)."""
+    n = len(reference)
+
+    def mid_rank(value: float) -> float:
+        return (np.sum(reference < value) + 0.5 * np.sum(reference == value)) / n
+
+    if x < reference.min():
+        p = 0.0
+    elif x > reference.max():
+        p = 1.0
+    elif np.any(reference == x):
+        p = mid_rank(x)
+    else:
+        lower, upper = reference[reference < x].max(), reference[reference > x].min()
+        p_lower, p_upper = mid_rank(lower), mid_rank(upper)
+        p = p_lower + (p_upper - p_lower) * (x - lower) / (upper - lower)
+    return float(np.clip(np.round(curve(p), RATING_DECIMALS), RATING_MIN, RATING_MAX))
+
+
+@pytest.mark.parametrize("seed, discrete", [(1, False), (2, True), (3, True), (4, False)])
+def test_ratings_match_a_brute_force_mid_rank_oracle(seed, discrete):
+    """Random reference with many ties (discrete scores) or none; queries hit reference scores
+    exactly, fall between them, and lie outside the range."""
+    rng = np.random.default_rng(seed)
+    reference = rng.integers(0, 12, size=400).astype(float) if discrete else rng.normal(size=400)
+    scaler = PercentileScaler().fit(make_frame(reference))
+    lo, hi = reference.min(), reference.max()
+    queries = np.concatenate(
+        [
+            rng.choice(reference, size=60),                       # exact reference scores (ties included)
+            rng.uniform(lo, hi, size=150),                        # between reference scores
+            np.unique(reference)[:-1] + np.diff(np.unique(reference)) / 2,   # midpoints of gaps
+            [lo - 1.0, hi + 1.0, lo, hi],                         # outside, and the extremes themselves
+        ]
+    )
+    out = scaler.transform(make_frame(queries))
+    expected = np.array([_brute_force_rating(reference, x) for x in queries])
+    np.testing.assert_array_equal(out["rating"].to_numpy(), expected)
+    ordered = out.assign(raw=queries).sort_values("raw", kind="mergesort")["rating"].to_numpy()
+    assert (np.diff(ordered) >= 0).all(), "rating must be non-decreasing in raw score, also off the reference"

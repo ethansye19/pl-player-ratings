@@ -20,6 +20,7 @@ from src.contract import (
     RATING_MIN,
     TARGET_MEAN,
 )
+from src.scale.bands import rating_band
 from src.scale.curve import ANCHORS, curve
 
 BUCKET_TENTHS = 5          # histogram buckets are 0.5 wide = 5 tenths of a rating point
@@ -113,6 +114,11 @@ def curve_statistics() -> list[tuple[str, str]]:
     def share(mask: np.ndarray) -> float:
         return float(mask.mean())
 
+    # share of ratings per colour band, classified by the one definition in bands.py
+    band_share = {"red": 0.0, "orange": 0.0, "green": 0.0, "blue": 0.0}
+    for value, count in zip(values, counts):
+        band_share[rating_band(value / 10 ** RATING_DECIMALS)] += count / CURVE_GRID_N
+
     return [
         ("mean rating", f"{ratings.mean():.3f}"),
         ("median rating", f"{np.median(ratings):.1f}"),
@@ -125,6 +131,10 @@ def curve_statistics() -> list[tuple[str, str]]:
         (f"{RATING_MAX:.1f}", _pct(share(ratings == RATING_MAX))),
         ("below 5.0", _pct(share(ratings < 5.0))),
         ("below 4.0", _pct(share(ratings < 4.0))),
+        ("red band (below 6.0)", _pct(band_share["red"])),
+        ("orange band (6.0 to 6.9)", _pct(band_share["orange"])),
+        ("green band (7.0 to 7.9)", _pct(band_share["green"])),
+        ("blue band (8.0 or better)", _pct(band_share["blue"])),
     ]
 
 
