@@ -3,9 +3,10 @@
 Independent verification of the baseline and VAEP ratings (PROMPT.md Step 4). Read-only on
 ``data/processed``; the only file written is the report. Every table is recomputed from the
 processed files, the saved scalers and (unless ``--skip-tests``) a fresh run of the test suite,
-so the report can be re-run after weight or curve changes. The judgement paragraphs are the
-verifier's reading of the run of 2026-10-31 and are marked as such: the numbers next to them
-regenerate, the prose does not.
+so the report can be re-run after weight or curve changes. When ``data/processed/before/``
+holds the frozen pre-decision outputs, section 7 compares them with the current files. The
+judgement paragraphs are the verifier's reading of the run they are dated with: the numbers
+next to them regenerate, the prose does not.
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ import time
 import pandas as pd
 
 from src.contract import MIN_MINUTES, POSITION_GROUPS
-from src.validation import analysis, checks
+from src.validation import analysis, before_after, checks
 from src.validation.data import METHODS, REPORT_PATH, Data, fmt, load, md_table
 
 log = logging.getLogger("src.validation.validate")
@@ -28,24 +29,21 @@ ISOLATION_MATCHES = [3754013, 3754290, 3754079]
 ISOLATION_OTHER = 3754275  # shares Leicester players with two of the matches above
 
 MATCH_NOTES = {
-    3754013: "What happened: Vardy (34') and Mahrez (48') put Leicester 2-0 up, Remy pulled one back; Mourinho's last match in charge of Chelsea. "
-             "(The brief lists this as 3-1; the data and the record say 2-1.) Both methods put Mahrez top (1 goal, 1 assist) and give Vardy a scorer's rating; Albrighton (assist) "
-             "and Kante read right. Questionable: the baseline makes Ivanovic (16 progressive passes, 60 completed) Chelsea's best player in a defeat; VAEP gives Schmeichel 7.8 and "
-             "Danny Simpson 7.5 on carries, passes and one tackle, and puts Huth (a centre-back whose match was routine clearing with one goal conceded) bottom of the winning side at 4.5.",
-    3754290: "What happened: Huth headed in at 3' and 60', Mahrez scored at 48'; Aguero's 87' goal was a consolation. Huth (two goals) and Mahrez top both lists; Fuchs' 8.2 baseline "
-             "(assist, six tackles) is fair. Questionable: baseline 7.0 for Demichelis (seven aerials, twelve progressive passes) as City's second-best player in a 1-3 home defeat in "
-             "which he was widely blamed for the goals; Drinkwater 7.1 vs 5.3 is a typical disagreement (two key passes and two tackles against -0.118 of VAEP); Ulloa's 13-minute cameo "
-             "costs him -1.00 raw (two possessions lost, four aerials lost) and a 5.1, which is harsh for a quarter of an hour.",
-    3754275: "What happened: Vardy's 60' volley from Mahrez's long ball, then a second at 71'. VAEP has Vardy clear at 9.0; the baseline ranks Fuchs (8.6, no goal: 12 progressive passes, "
-             "6 aerials, 4 interceptions, clean sheet) above Vardy (8.2) because a 7.00 raw is rarer inside the DEF group than an 8.06 raw inside the FWD group. Firmino's 4.7 / 4.2 "
-             "(13 possessions lost) matches the eye. Huth 8.0 vs 5.6 shows VAEP's blindness to clearances, interceptions and clean sheets.",
-    3754079: "What happened: Mitrovic opened the scoring; Aguero scored five between 42' and 62'; De Bruyne (goal, two assists) and Silva (two assists) ran the game. Aguero is the only "
-             "10.0 in both methods for this match, De Bruyne and Silva follow in the right order. Newcastle's back four sit at 4.3-4.9 in the baseline purely on team context "
-             "(-4.8 for six goals conceded, -1.56 for 3.9 xG faced each); VAEP instead gives Mbemba 8.0 (one tackle worth +0.237) and Kolarov 8.2 in a 6-1. Fernando 7.7 vs 4.1 "
-             "is the missed-shots pattern (1.29 xG, three on target, no goal). Krul 5.8 / 4.7 after six saves and six conceded from 3.9 xG.",
-    3754092: "What happened: the 'Battle of the Bridge' - Kane 35', Son 44', Cahill 58', Hazard 83' ended Tottenham's title challenge; twelve yellow cards, nine for Spurs. All four "
-             "scorers are the top-rated outfield players under both methods (Cahill 7.6 / 8.8, Hazard 7.7 / 7.5 off the bench, Kane 7.5 / 7.4, Son 7.4 / 7.7). Eriksen 7.0 vs 5.4 "
-             "(assist, -0.087 VAEP) and Lloris 6.1 vs 8.0 / Azpilicueta 6.2 vs 7.8 are the recurring disagreement patterns; Terry's 5.2 (error leading to a shot) is plausible.",
+    3754013: "What happened: Vardy (34') and Mahrez (48') put Leicester 2-0 up, Remy pulled one back; Mourinho's last match in charge of Chelsea "
+             "(the brief lists this as 3-1; the data and the record say 2-1). Baseline (after the decisions): Mahrez 8.5 top, Vardy 7.1, Albrighton 7.7 and Kante 7.2 read right; "
+             "Ivanovic 8.0 (was 7.6) as Chelsea's best in a defeat is the one questionable row and got slightly worse because the halved team context no longer pulls a losing defender down. "
+             "VAEP (xG labels): Mahrez 8.8 still top, but Vardy's goal is now worth so little that he falls to 5.6 (was 7.4) and Kante climbs to 8.2 on ball recoveries after chances.",
+    3754290: "What happened: Huth headed in at 3' and 60', Mahrez scored at 48'; Aguero's 87' goal was a consolation. Baseline: Huth 10.0 (was 9.8), Mahrez 8.2, Fuchs 8.3 (assist, six tackles) - right; "
+             "Demichelis 7.6 (was 7.0) as City's best player in a 1-3 home defeat is the price of halving the team context (his seven aerials and twelve progressive passes are no longer offset); "
+             "Ulloa's 13-minute cameo at 5.0 is still harsh. VAEP: Huth's two headers are now worth 7.1 (was 9.9) because a header from a corner adds little to a state that already carried the corner's xG, "
+             "while Fernandinho (8.4, was 5.9) and Vardy (8.9, no goal) rise on chances created; Fuchs' assist drops him to 5.3. For this match the outcome-based VAEP matched the eye better.",
+    3754275: "What happened: Vardy's 60' volley from Mahrez's long ball, then a second at 71'. Baseline: Fuchs 8.5 still edges Vardy 8.3 (a 7.0 DEF raw remains rarer than an 8.1 FWD raw); Firmino 5.1 (13 possessions lost). "
+             "VAEP: Vardy 8.4 (was 9.0) still Leicester's best, Emre Can 7.6 (was 6.1) and Lucas 8.1 rise; Firmino 3.5.",
+    3754079: "What happened: Mitrovic opened the scoring; Aguero scored five between 42' and 62'; De Bruyne (goal, two assists) and Silva (two assists) ran the game. Baseline: Aguero 10.0, De Bruyne 9.4, Silva 8.0 - right; "
+             "Newcastle's beaten defenders rise from 4.5-4.7 to 5.1-5.3 and Anita from 4.9 to 5.8 after the team-context halving (still the bottom of the match, which is fair in a 1-6). VAEP: Aguero's five goals are now worth 0.83 in total and an 8.9 "
+             "(was 10.0); Kolarov 8.5, Silva 8.2 and Mitrovic 8.2 now rank close to him; Fernando 7.7 (was 4.1) is no longer punished for 1.29 xG of misses.",
+    3754092: "What happened: the 'Battle of the Bridge' - Kane 35', Son 44', Cahill 58', Hazard 83' ended Tottenham's title challenge; twelve yellow cards. Baseline: Cahill 8.2, Hazard 7.7, Kane 7.7, Son 7.5 - the four scorers lead, as before. "
+             "VAEP: Ivanovic 8.3 (was 6.5) and Son 8.1 lead, Cahill falls to 7.4 (a header from a cross: little added xG), Hazard 6.8, Kane 7.0; Lloris 6.6 (was 8.0) is the goalkeeper correction working.",
 }
 
 
@@ -55,8 +53,7 @@ def section_tests(res: dict | None) -> list[str]:
     if res is None:
         out += ["Skipped (`--skip-tests`).", ""]
         return out
-    out += [f"Command: `python {res['command']}` (repo root, {res['seconds']} s).", "",
-            f"**Result: `{res['summary']}`**", ""]
+    out += [f"Command: `python {res['command']}` (repo root, {res['seconds']} s).", "", f"**Result: `{res['summary']}`**", ""]
     if res["expected_failures"]:
         out += [f"Expected failures ({len(res['expected_failures'])}): the explanation feature (`src/explain`) and the FPL pipeline (`src/pipeline/fpl*`, `gameweek`) are Steps 5 and 6 and have not been built; "
                 "their tests fail on import (`import_or_fail`), not on behaviour:", ""]
@@ -69,8 +66,7 @@ def section_tests(res: dict | None) -> list[str]:
 
 
 def section_rules(rules: dict, iso_rows: list[list], cons: list) -> list[str]:
-    out = ["### 1.1 Distribution rules re-derived from `ratings_<method>.parquet`", "",
-           "Computed here from the parquet files, independently of the tests.", ""]
+    out = ["### 1.1 Distribution rules re-derived from `ratings_<method>.parquet`", "", "Computed here from the parquet files, independently of the tests.", ""]
     for method in METHODS:
         r = rules[method]
         out += [f"**{method}** ({r['n']} rated rows)", "",
@@ -101,8 +97,8 @@ def section_positions(pos: dict) -> list[str]:
            "- **Scaler** (`src/scale/scaler.py`): `fit` builds one reference table per group from the rated rows (`minutes >= 10`); `transform` looks up a row's own group's table and raises for a group "
            "absent from the fit. No row is ever ranked against a row of another group.",
            "- **Web export** (`src/pipeline/export_web.py`): `position_group`, `position_id` and `position` come from the lineups; ratings are joined on `(match_id, player_id)` only. The page (`web/app.js`) "
-           "uses `position_id` for the pitch layout and `position_group` only as a label.",
-           "- **Where raw scores are compared across groups**: nowhere in a rating function. The only cross-group raw comparisons are in reports (`reports/vaep_splits.md` top-15 table, "
+           "uses `position_id` for the pitch layout and `position_group` as a label and, since the Step 4 decisions, to show goalkeepers their baseline rating in VAEP mode (payloads unchanged).",
+           "- **Where raw scores are compared across groups**: nowhere in a rating function. The only cross-group raw comparisons are in reports (`reports/vaep_splits.md` top tables, "
            "`src/baseline/rate.py::summary` top-5 print), which are descriptive.", ""]
     out += ["### 2.2 Edge cases in the real data", ""]
     out += [f"- Position ids seen in lineups: {pos['ids_seen']} (25 Secondary Striker never occurs). `position_group == group(position_id)` on every lineup row: {pos['mapping_consistent']}.",
@@ -173,16 +169,19 @@ def section_eye(data: Data, tops: dict, matches: list, buckets: dict) -> list[st
         n_goal = sum(1 for r in rows if r["goals"] >= 1)
         n_flag = sum(1 for r in rows if r["flags"])
         n_lost = sum(1 for r in rows if "team lost" in r["flags"])
-        out += [f"{n_goal} of the 20 scored at least once; {n_flag} rows carry a flag ({n_lost} in a defeat). Automatic flags: team lost; no goal or assist (outfield); 2+ conceded (GK); "
+        n_none = sum(1 for r in rows if r["goals"] + r["assists"] == 0 and r["group"] != "GK")
+        out += [f"{n_goal} of the 20 scored at least once; {n_none} outfield rows have neither a goal nor an assist; {n_flag} rows carry a flag ({n_lost} in a defeat). Automatic flags: team lost; no goal or assist (outfield); 2+ conceded (GK); "
                 "top VAEP action is defensive credit on a non-shot action.", ""]
-    out += ["**Verifier's judgement (run of 2026-10-31; re-read after any change).** Baseline: every one of the 20 is a goal-driven performance (eight hat-tricks or better, two-goal "
-            "defenders, Trippier's goal plus clean sheet plus nineteen non-zero stats) or Forster's eleven-save 0-0 at Arsenal; nothing here is illegitimate, the weakest claim being that "
-            "Trippier's 11.33 raw is the second-best defensive performance of the season. VAEP: the goal-scorers' rows are legitimate, but the list is essentially 'who scored': a defender's "
-            "single goal is worth +0.8 to +0.98, about four standard deviations of the DEF raw score, so Rose, Moreno, Janmaat, Brady and Azpilicueta sit "
-            "in the top 0.5% of all defender performances for one shot each (Brady's in a 2-2 draw);de Gea's 9.8 in a 2-1 defeat comes from a +0.254 'dribble' (a carry after a Bournemouth attack broke down, "
-            "credited as a 0.25 drop in P(concede)) and is not a legitimate top-20 performance; Westwood's 9.4 is two goals in a 2-4 home defeat.", ""]
+    out += ["**Verifier's judgement (re-validation run after the Step 4 decisions; the pre-decision reading is in `reports/validation_before.md`).** Baseline: the list is still goal-driven and legitimate "
+            "(eight hat-tricks or better, two-goal defenders, Forster's eleven-save 0-0 at Arsenal); the entries that moved in - Mane's hat-trick, De Bruyne's goal and two assists, Ramsey, Boruc's clean sheet with a penalty save - "
+            "are as defensible as those they replaced (Aguero at Chelsea, Barkley, Silva, Koscielny), and the five-goal Aguero game remains the clear number one. VAEP with xG labels: the list is no longer 'who scored' - it is "
+            "'who was on the ball, or first to it, when a big chance happened'. Nine of the twenty have neither a goal nor an assist; van Aanholt (9.8) and Mignolet (9.4) are in there for 0-2 defeats, Kouyate and Steve Cook for "
+            "single clearances worth +0.54 and +0.50, Mignolet for five saves worth +0.14 to +0.29 each; Bony and Ramsey top the list with one goal apiece; Aguero's five goals are now worth +0.83 in total and an 8.9, outside the top 20. "
+            "The outcome lottery has moved from the shooter to whoever touched the ball next: with xG labels a state that contains a 0.5-xG shot keeps P(concede) at 0.5 whether or not the shot went in, and the defending team's next "
+            "action - a clearance, a tackle, a save - is credited with the whole drop. This is a new eye-test failure, worse than the one it replaced for defenders and keepers, better for creative midfielders and forwards (section 6).", ""]
     out += ["### 3.3 Five notable matches", "",
-            "B = baseline, V = VAEP. 'marks' are derived from the match events (G goals, A assists, OG, RED, errors, penalties). Both teams, every rated player; unrated (< 10 minutes) players are listed below each table.", ""]
+            "B = baseline, V = VAEP. 'marks' are derived from the match events (G goals incl. penalties, A assists, OG, RED, errors, penalties). Both teams, every rated player; unrated (< 10 minutes) players are listed below each table. "
+            "Section 7.1 repeats these matches with the pre-decision ratings side by side.", ""]
     for m, rows, unrated, header in matches:
         out += [f"#### {header}", "",
                 md_table(["side", "team", "player", "group", "position", "role", "min", "B raw", "B", "V raw", "V", "marks", "biggest baseline contributions", "best VAEP action"], rows), ""]
@@ -190,7 +189,7 @@ def section_eye(data: Data, tops: dict, matches: list, buckets: dict) -> list[st
             out += ["Unrated (< 10 minutes): " + "; ".join(unrated), ""]
         note = MATCH_NOTES.get(int(m.name) if hasattr(m, "name") else 0)
         if note:
-            out += [f"*Judgement (verifier, 2026-10-31):* {note}", ""]
+            out += [f"*Judgement (verifier, re-validation run):* {note}", ""]
     out += ["### 3.4 Ratings by minutes played and by starter / substitute", ""]
     for method in METHODS:
         b = buckets[method]
@@ -202,11 +201,10 @@ def section_eye(data: Data, tops: dict, matches: list, buckets: dict) -> list[st
                 md_table(["starter", "n", "mean", "median", "sd"], [[("starter" if idx else "substitute"), int(row["size"]), fmt(row["mean"]), f"{row['median']:.1f}", fmt(row["std"])] for idx, row in b["starter"].iterrows()]), "",
                 f"Spearman(rating, minutes): starters {fmt(b['rho_minutes_starters'])}, substitutes {fmt(b['rho_minutes_subs'])}.", ""]
     bb, bv = buckets["baseline"]["bucket"], buckets["vaep"]["bucket"]
-    out += [f"**Judgement.** Short substitutes are treated plausibly but not neutrally: a 10-20 minute cameo averages {bb.loc['10-20', 'mean']:.2f} (baseline) / {bv.loc['10-20', 'mean']:.2f} (VAEP) against 6.5 for the season, "
+    out += [f"**Judgement.** A 10-20 minute cameo averages {bb.loc['10-20', 'mean']:.2f} (baseline) / {bv.loc['10-20', 'mean']:.2f} (VAEP) against 6.5 for the season, "
             f"{100 * bb.loc['10-20', 'share_below_6']:.0f}% / {100 * bv.loc['10-20', 'share_below_6']:.0f}% of them rate below 6.0 and only {100 * bb.loc['10-20', 'share_7plus']:.1f}% / {100 * bv.loc['10-20', 'share_7plus']:.1f}% reach 7.0. "
-            "Both raw scores are sums, so a quiet cameo scores near zero, which sits in the lower-middle of each group (the baseline weights file documents this choice). The compressed spread (sd about 0.45-0.5 against "
-            "0.85 for full matches) means a cameo rarely gets an extreme rating, which is the right behaviour; the mean of about 6.0-6.2 says 'a cameo in which nothing happened is slightly below average', which is defensible "
-            "but is a choice the human should be aware of (a minutes-neutral treatment would need a per-group, per-minutes reference, which the contract does not provide).", ""]
+            "Both raw scores are sums, so a quiet cameo scores near zero; what has changed since the pre-decision run is where zero sits inside each group (section 7.7): with the team context halved, far fewer "
+            "starters in beaten teams go negative, so the same quiet cameo now ranks lower. See finding (ii) 'subs' in section 6.", ""]
     return out
 
 
@@ -226,8 +224,9 @@ def section_compare(comp: dict) -> list[str]:
     out += ["Players whose season averages disagree most (vaep - baseline):", "",
             md_table(["player", "group", "n", "baseline", "vaep", "diff"], [[r.player, r.group, r.n, fmt(r.baseline, 2), fmt(r.vaep, 2), f"{r.diff:+.2f}"] for r in sd.itertuples()]), ""]
     out += ["### 4.2 The ten player-matches where the methods disagree most", "",
-            f"Unit: player-match (the largest |vaep rating - baseline rating| over all rated rows). {comp['gk_share_top20']} of the 20 largest disagreements are goalkeepers, so the five largest outfield "
-            "disagreements follow separately. Hypotheses are generated from the player's own stats and action values.", ""]
+            f"Unit: player-match (the largest |vaep rating - baseline rating| over all rated rows). {comp['gk_share_top20']} of the 20 largest disagreements are goalkeepers; the five largest outfield "
+            "disagreements follow separately. Hypotheses are generated from the player's own stats and action values (the generator was written for the outcome-label VAEP; under xG labels the "
+            "'unconverted shot' clause rarely fires and the defensive-credit clause is the usual explanation).", ""]
     for i, d in enumerate(comp["disagreements"], 1):
         out += [f"{i}. **{d['player']}** ({d['team']} v {d['opponent']}, {d['score']}, {d['group']}, {d['minutes']:.0f} min): baseline {d['raw_b']:.2f} -> **{d['rating_b']:.1f}**, VAEP {d['raw_v']:+.3f} -> **{d['rating_v']:.1f}** "
                 f"(diff {d['diff']:+.1f}). Hypothesis: {d['hypothesis']}."]
@@ -237,7 +236,7 @@ def section_compare(comp: dict) -> list[str]:
                 f"(diff {d['diff']:+.1f}). Hypothesis: {d['hypothesis']}."]
     out += ["", "### 4.3 What the two methods actually reward", "",
             "Spearman rank correlation of each baseline stat with the VAEP raw score and with the baseline raw score, within group (rated rows; the twelve stats most related to VAEP shown, "
-            "plus every stat whose two correlations differ in sign by more than 0.2):", ""]
+            "plus every stat whose two correlations differ markedly):", ""]
     for g in POSITION_GROUPS:
         rows = comp["stat_corr"][g]
         shown = rows[:12] + [r for r in rows[12:] if (r[3] > 0.2 and r[4] < 0) or (r[3] < -0.2 and r[4] > 0) or abs(r[3] - r[4]) > 0.4]
@@ -271,11 +270,11 @@ def section_compare(comp: dict) -> list[str]:
     tm = comp["team_table"]
     out += [f"Team mean rating against final league points (Spearman: baseline {comp['rho_team_points'][0]:.3f}, vaep {comp['rho_team_points'][1]:.3f}):", "",
             md_table(["team", "points", "baseline mean", "vaep mean"], [[idx, int(r.pts), fmt(r.rating_b), fmt(r.rating_v)] for idx, r in tm.iterrows()]), ""]
-    out += ["Events with a fixed football meaning, and the mean rating each method gives the player:", "",
+    out += ["Events with a fixed football meaning, and the mean rating each method gives the player (goals include penalties):", "",
             md_table(["event", "n", "baseline mean", "vaep mean", "baseline < 6.0", "vaep < 6.0"], [[e, n, fmt(b, 2), fmt(v, 2), lb, lv] for e, n, b, v, lb, lv in comp["events"]]), ""]
     pv = comp["penalty_values"]
     out += [f"VAEP value of the penalty kick to the taker: scored {pv.loc['success', 'mean']:+.3f} (n = {int(pv.loc['success', 'size'])}), missed {pv.loc['fail', 'mean']:+.3f} (n = {int(pv.loc['fail', 'size'])}); "
-            "socceraction fixes the pre-penalty scoring probability at 0.792, so the taker gets almost nothing for scoring and loses almost everything for missing, whereas the baseline counts a penalty goal as a full goal.", ""]
+            "socceraction fixes the pre-penalty scoring probability at 0.792.", ""]
     ls = comp["low_scorers_vaep"]
     if len(ls):
         out += ["Goal-scorers rated below 5.5 by VAEP:", "",
@@ -314,30 +313,129 @@ def section_stability(stab: dict) -> list[str]:
     hb, hv = stab["halves"]["baseline"], stab["halves"]["vaep"]
     better = "baseline" if hb["pearson"] > hv["pearson"] else "vaep"
     out += [f"**The {better} rating is the more reliable signal** (Pearson {hb['pearson']:.3f} vs {hv['pearson']:.3f}, Spearman {hb['spearman']:.3f} vs {hv['spearman']:.3f} over {hb['n']} players; "
-            f"the gap is the same on the odd/even split, {stab['odd_even']['baseline']['pearson']:.3f} vs {stab['odd_even']['vaep']['pearson']:.3f}, so it is not an artefact of mid-season form or transfers). "
-            "Both are far below the pure volume benchmark (completed passes per 90, which measures role and team style more than quality) and the baseline is above goals + assists per 90. "
-            "Goalkeepers are the least stable group under both methods (19 players, and shot-stopping is noisy season to season).", ""]
+            f"odd/even split {stab['odd_even']['baseline']['pearson']:.3f} vs {stab['odd_even']['vaep']['pearson']:.3f}). "
+            "Both are far below the pure volume benchmark (completed passes per 90, which measures role and team style more than quality). Goalkeepers are the least stable group under both methods (19 players).", ""]
     return out
 
 
-def section_findings(rules: dict, cons: list, iso_rows: list, tests: dict | None, pos: dict, comp: dict, stab: dict, buckets: dict) -> list[str]:
+# ------------------------------------------------------------------ 7. before / after
+def section_before_after(ba: dict | None, data: Data) -> list[str]:
+    out = ["## 7. Before / after the Step 4 decisions", ""]
+    if ba is None:
+        out += ["`data/processed/before/` is not present, so no comparison was made.", ""]
+        return out
+    out += ["Before = the frozen pre-decision outputs in `data/processed/before/` (outcome-label VAEP, original baseline weights); after = the current files. "
+            "Decisions applied: D (DEF/MID team-context weights halved), E (FWD aerials/possession weights eased), F (`penalties_scored` at 1.25, `goals` non-penalty only, `key_passes` without assists), "
+            "B (VAEP shots valued through xG soft labels), A (goalkeepers shown with their baseline rating in VAEP mode on the page). G, H and the 12/16 reclassification were skipped.", ""]
+    # 7.1 matches
+    out += ["### 7.1 The five notable matches, before and after", "", "B = baseline, V = VAEP; 'd' = after minus before. Marks from the match events (G = goals incl. penalties).", ""]
+    for mid, (header, rows) in ba["matches"].items():
+        out += [f"#### {header}", "", md_table(["side", "player", "group", "role", "min", "marks", "B before", "B after", "d", "V before", "V after", "d"], rows), ""]
+    out += ["*Judgement.* Baseline: the changes are small (median |d| about 0.1) and mostly in the intended direction - losing defenders and midfielders rise (in the 1-6 Newcastle's defenders go from 4.5-4.7 to 5.1-5.3 and Anita from 4.9 to 5.8; "
+            "Lovren/Sakho +0.4/+0.3 at Leicester), clean-sheet defenders ease slightly, penalty scorers lose about 0.4; the only moves that read worse are losing centre-backs who were partly carried by "
+            "volume (Demichelis 7.0 -> 7.6 in the 1-3, Ivanovic 7.6 -> 8.0 in the 2-1). VAEP: large moves in both directions. Improvements: Fernando 4.1 -> 7.7 (1.29 xG of misses no longer charged), "
+            "Lloris 8.0 -> 6.6 and Krul 4.7 -> 6.5 (keepers judged on chances faced), Costa 5.3 -> 6.7, Kante 7.3 -> 8.2. Regressions: Aguero's five goals 10.0 -> 8.9, Huth's two headers 9.9 -> 7.1, "
+            "Vardy's goal v Chelsea 7.4 -> 5.6, Cahill's header 8.8 -> 7.4, Fuchs' assist 6.9 -> 5.3: the decisive actions of these matches are now worth less than the build-up and the defending around them.", ""]
+    # 7.2 top 20
+    for method in METHODS:
+        out += [f"### 7.2 Top 20 single-match ratings before and after: {method}", "",
+                md_table(["#", "before", "rating", "same row's rating after", "", "after", "same row's rating before", "rating", ""], ba["top20"][method]), ""]
+    nb = sum(1 for r in ba["top20"]["baseline"] if r[8]); nv = sum(1 for r in ba["top20"]["vaep"] if r[8])
+    out += [f"{nb} of the 20 baseline rows are new; {nv} of the 20 VAEP rows are new (the VAEP list was replaced entirely; see 3.2 for what the new rows contain).", ""]
+    # 7.3 disagreements
+    out += ["### 7.3 Ten largest baseline-vs-VAEP disagreements, before and after", "",
+            "Before:", "", md_table(["player-match", "group", "min", "baseline", "vaep", "vaep - baseline"], ba["disagree"]["before"]), "",
+            "After:", "", md_table(["player-match", "group", "min", "baseline", "vaep", "vaep - baseline"], ba["disagree"]["after"]), "",
+            f"Goalkeepers in the before list: {sum(1 for r in ba['disagree']['before'] if r[1] == 'GK')}; in the after list: {sum(1 for r in ba['disagree']['after'] if r[1] == 'GK')}. "
+            "The after list is dominated by defenders whom VAEP credits with a single big clearance/tackle (van Aanholt, Cook, Delaney) and attackers whose goals add little xG beyond the state that preceded them (Lukaku, Williams, Antonio).", ""]
+    # 7.4 agreement + old vs new
+    ag_b, ag_a = ba["agree"]["before"], ba["agree"]["after"]
+    rows = [[k, fmt(ag_b[k]), fmt(ag_a[k]), f"{ag_a[k] - ag_b[k]:+.3f}"] for k in ("all", "GK", "DEF", "MID", "FWD", "season")]
+    out += ["### 7.4 Agreement between the methods, before and after", "",
+            md_table(["Spearman(baseline, vaep)", "before", "after", "change"], rows), "",
+            f"(season = per-player season averages, {ag_a['season_n']} players with 10+ appearances.)", "",
+            "Spearman between each method's own old and new ratings (same player-matches):", "",
+            md_table(["method", "rows", "all", "GK", "DEF", "MID", "FWD", "mean |change|", "rows moved >= 1.0"], ba["old_vs_new"]), ""]
+    # 7.5 stability
+    rows = []
+    for method in METHODS:
+        hb, ha = ba["stability"]["before"]["halves"][method], ba["stability"]["after"]["halves"][method]
+        rows.append([f"{method} - all", hb["n"], fmt(hb["pearson"]), fmt(hb["spearman"]), fmt(ha["pearson"]), fmt(ha["spearman"])])
+        for g in POSITION_GROUPS:
+            b = [x for x in hb["by_group"] if x[0] == g][0]
+            a = [x for x in ha["by_group"] if x[0] == g][0]
+            rows.append([f"{method} - {g}", b[1], fmt(b[2]), fmt(b[3]), fmt(a[2]), fmt(a[3])])
+        ob, oa = ba["stability"]["before"]["odd_even"][method], ba["stability"]["after"]["odd_even"][method]
+        rows.append([f"{method} - odd/even split", ob["n"], fmt(ob["pearson"]), fmt(ob["spearman"]), fmt(oa["pearson"]), fmt(oa["spearman"])])
+    out += ["### 7.5 Split-half stability before and after (matchweeks 1-19 vs 20-38, 5+ appearances in each half)", "",
+            md_table(["signal", "players", "Pearson before", "Spearman before", "Pearson after", "Spearman after"], rows), ""]
+    # 7.6 team context
+    tcb, tca = ba["team_context"]["before"], ba["team_context"]["after"]
+    rows = [[g, fmt(tcb[g]) if tcb else "n/a", fmt(tca[g])] for g in ("GK", "DEF", "MID", "FWD")]
+    rb, ra = ba["result"]["before"], ba["result"]["after"]
+    out += ["### 7.6 Team context in the baseline, before and after", "",
+            md_table(["group", "share of raw variance from team context, before", "after"], rows), "",
+            f"Dependence on the result: winners/losers average {rb['W_b']:.2f}/{rb['L_b']:.2f} before and {ra['W_b']:.2f}/{ra['L_b']:.2f} after (baseline); Spearman(rating, goal difference) "
+            f"baseline {rb['rho_b']:.3f} -> {ra['rho_b']:.3f} (DEF {rb['rho_b_DEF']:.3f} -> {ra['rho_b_DEF']:.3f}, MID {rb['rho_b_MID']:.3f} -> {ra['rho_b_MID']:.3f}, GK {rb['rho_b_GK']:.3f} -> {ra['rho_b_GK']:.3f}); "
+            f"VAEP {rb['rho_v']:.3f} -> {ra['rho_v']:.3f} (DEF {rb['rho_v_DEF']:.3f} -> {ra['rho_v_DEF']:.3f}, GK {rb['rho_v_GK']:.3f} -> {ra['rho_v_GK']:.3f}).", ""]
+    # events
+    eb, ea = ba["events"]["before"], ba["events"]["after"]
+    out += ["Mean rating by event, before -> after:", "",
+            md_table(["event", "n", "baseline before", "baseline after", "vaep before", "vaep after"],
+                     [[k, eb[k][0], fmt(eb[k][1], 2), fmt(ea[k][1], 2), fmt(eb[k][2], 2), fmt(ea[k][2], 2)] for k in eb]), ""]
+    rb_, ra_ = ba["roles"]["before"], ba["roles"]["after"]
+    out += ["Roles inside a group (60+ minute appearances), before -> after:", "",
+            md_table(["group", "role", "n", "baseline before", "baseline after", "vaep before", "vaep after"],
+                     [[g, r, int(rb_.loc[(g, r), "n"]), fmt(rb_.loc[(g, r), "baseline"], 2), fmt(ra_.loc[(g, r), "baseline"], 2), fmt(rb_.loc[(g, r), "vaep"], 2), fmt(ra_.loc[(g, r), "vaep"], 2)] for g, r in rb_.index]), ""]
+    # 7.7 minutes buckets
+    out += ["### 7.7 Ratings by minutes bucket, before and after", ""]
+    for method in METHODS:
+        bb, ba_ = ba["buckets"]["before"][method]["bucket"], ba["buckets"]["after"][method]["bucket"]
+        out += [f"**{method}**", "",
+                md_table(["minutes", "n", "mean before", "mean after", "share < 6.0 before", "share < 6.0 after", "share >= 7.0 before", "share >= 7.0 after"],
+                         [[idx, int(bb.loc[idx, "size"]), fmt(bb.loc[idx, "mean"]), fmt(ba_.loc[idx, "mean"]), fmt(bb.loc[idx, "share_below_6"]), fmt(ba_.loc[idx, "share_below_6"]), fmt(bb.loc[idx, "share_7plus"]), fmt(ba_.loc[idx, "share_7plus"])] for idx in bb.index]), ""]
+    sb, sa = ba["subs"]["before"], ba["subs"]["after"]
+    rows = []
+    for g in ("DEF", "MID", "FWD"):
+        rows.append([g, sb[f"cameo_n_{g}"], fmt(sb[f"cameo_mean_{g}"], 2), fmt(sa[f"cameo_mean_{g}"], 2), fmt(sb[f"cameo_median_raw_{g}"], 2), fmt(sa[f"cameo_median_raw_{g}"], 2),
+                     fmt(sb[f"cameo_pct_{g}"]), fmt(sa[f"cameo_pct_{g}"]), fmt(sb[f"share_neg_starters_{g}"]), fmt(sa[f"share_neg_starters_{g}"]), fmt(sb[f"p25_{g}"], 2), fmt(sa[f"p25_{g}"], 2),
+                     f"{sa[f'p30_{g}'] - sa[f'cameo_median_raw_{g}']:+.2f}"])
+    out += ["Why the 10-20 minute baseline cameos moved (outfield groups):", "",
+            md_table(["group", "cameos", "mean rating before", "after", "median cameo raw before", "after", "its percentile in the group before", "after", "share of 60+ min appearances with raw < 0 before", "after",
+                      "group raw p25 before", "after", "raw offset that would put the median cameo at p30 now"], rows), ""]
+    # 7.8 shot values
+    out += ["### 7.8 What VAEP pays for shots and saves, before and after (mean value credited to the acting player)", "",
+            md_table(["action", "n", "offensive before", "offensive after", "defensive before", "defensive after", "vaep before", "vaep after"],
+                     [[b[0], b[1], fmt(b[2], 3), fmt(a[2], 3), fmt(b[3], 3), fmt(a[3], 3), fmt(b[4], 3), fmt(a[4], 3)] for b, a in zip(ba["shots"]["before"], ba["shots"]["after"])]), ""]
+    ps = ba["penalty_states"]
+    if "error" not in ps:
+        out += [f"Penalty states (the {ps['n']} `shot_penalty` game states, cached features scored with their own fold models): label mean {ps['label_mean']:.3f} (the kick's xG 0.7835 plus any rebound in the window), "
+                f"model prediction mean {ps['pred_mean']:.3f} - {ps['pred_scored']:.3f} for scored kicks and {ps['pred_missed']:.3f} for missed ones, against socceraction's fixed prior of 0.792 for the state before the kick. "
+                "The split by outcome shows the mechanism: the shot's result is a one-hot feature of the state, so a missed penalty state is pulled towards the (low) prediction of failed open-play shots even though its label is the same 0.78.", ""]
+    else:
+        out += [f"Penalty-state predictions could not be recomputed: {ps['error']}.", ""]
+    vs_b, vs_a = ba["vaep_sign"]["before"], ba["vaep_sign"]["after"]
+    out += ["Share of rated appearances with a non-positive VAEP sum, before -> after: " + ", ".join(f"{g} {100 * vs_b[g]:.0f}% -> {100 * vs_a[g]:.0f}%" for g in POSITION_GROUPS) + ".", ""]
+    return out
+
+
+# ------------------------------------------------------------------------ 6. findings
+def section_findings(rules: dict, cons: list, iso_rows: list, tests: dict | None, pos: dict, comp: dict, stab: dict, buckets: dict, ba: dict | None) -> list[str]:
     all_rules_pass = all(ok for m in METHODS for _, ok, _ in rules[m]["checks"]) and all(ok for _, ok, _ in cons) and all(r[4] == "yes" and r[7] == "yes" for r in iso_rows)
     unexpected = tests["unexpected_failures"] if tests else []
     tc = {g: s for g, s, *_ in comp["team_context"]}
     role = pos["role"].set_index(["position_group", "role"])
     ev = {e[0]: e for e in comp["events"]}
-    vp = {g: row for g, *row in comp["vaep_parts"]}  # offensive mean, sd, defensive mean, sd, rho off, rho def, shot share, share<=0
+    vp = {g: row for g, *row in comp["vaep_parts"]}
     gk_rho = [s for g, n, s, p in comp["by_group"] if g == "GK"][0]
     hb, hv = stab["halves"]["baseline"], stab["halves"]["vaep"]
+    pv = comp["penalty_values"]
 
-    def scaled_share(share: float, factor: float) -> float:
-        return share * factor ** 2 / (share * factor ** 2 + 1 - share)
-
-    out = ["## 6. Findings and recommendations", "", "### (i) Bugs or rule violations - must fix", ""]
+    out = ["## 6. Findings and recommendations", "", "### (i) Bugs or rule violations on the current outputs - must fix", ""]
     if all_rules_pass and not unexpected:
-        out += ["**None found.** All distribution rules hold for both methods when re-derived from the parquet files (section 1.1), rating one match alone through the public functions reproduces the "
-                "season files exactly (1.2), the VAEP splits are leak-free and the files are mutually consistent (1.3), the web payloads match the parquet files, and the only failing tests are the "
-                "17 import failures of the unbuilt Steps 5 and 6. No code was changed by the verifier.", ""]
+        out += ["**None found.** All distribution rules hold for both methods on the regenerated files (1.1), rating one match alone through the public functions and the refit scalers reproduces the "
+                "season files exactly (1.2), the VAEP splits are unchanged and leak-free, `raw_vaep` equals the summed action values, the web payloads equal the parquet files (1.3), and the only failing "
+                "tests are the import failures of the unbuilt Steps 5 and 6. No code outside `src/validation` was changed by the verifier.", ""]
     else:
         out += ["The following checks failed and need investigation:", ""]
         out += [f"- test: `{f}`" for f in unexpected]
@@ -345,67 +443,105 @@ def section_findings(rules: dict, cons: list, iso_rows: list, tests: dict | None
         out += [f"- consistency: {name} ({detail})" for name, ok, detail in cons if not ok]
         out += [f"- isolation: {r}" for r in iso_rows if not (r[4] == "yes" and r[7] == "yes")]
         out += [""]
-    out += ["Two documentation nits, not code: the brief's 'Leicester City 3-1 Chelsea (14 Dec 2015)' was 2-1; and `tests/test_rules_season.py::test_each_position_group_is_anchored_separately` "
-            "allows +/- 0.15 per group while CLAUDE.md promises +/- 0.1 - the data passes at +/- 0.1 (every group is 6.500), so tightening the assertion is a free improvement (a test change, hence the human's call).", ""]
-    out += ["### (ii) Questionable modelling choices - the human decides", ""]
+    out += ["Still open from the first report (not code): the brief's 'Leicester City 3-1 Chelsea' was 2-1; `test_each_position_group_is_anchored_separately` allows +/- 0.15 where CLAUDE.md says +/- 0.1 (the data passes at +/- 0.1).", ""]
+
+    out += ["### (ii) What the decisions achieved against the original concerns A-H, and what they introduced", ""]
+    if ba is None:
+        out += ["(No `before/` snapshot: the before numbers quoted below come from `reports/validation_before.md`.)", ""]
+        ag_b = {"all": 0.448, "GK": 0.157, "DEF": 0.324, "MID": 0.547, "FWD": 0.558, "season": 0.613}
+        st_b = {"baseline": (0.544, 0.504), "vaep": (0.411, 0.411)}
+        tcb = {"DEF": 0.397, "MID": 0.127, "GK": 0.501}
+        eb = {}
+        sb = sa = None
+        ps = {}
+        shots_b = {}
+    else:
+        ag_b = ba["agree"]["before"]
+        st_b = {m: (ba["stability"]["before"]["halves"][m]["pearson"], ba["stability"]["before"]["halves"][m]["spearman"]) for m in METHODS}
+        tcb = ba["team_context"]["before"] or {"DEF": 0.397, "MID": 0.127, "GK": 0.501}
+        eb = ba["events"]["before"]
+        sb, sa = ba["subs"]["before"], ba["subs"]["after"]
+        ps = ba["penalty_states"]
+        shots_b = {r[0]: r for r in ba["shots"]["before"]}
+    ag_a = {"all": comp["spearman_rating"], "season": comp["season"]["spearman"], **{g: s for g, n, s, p in comp["by_group"]}}
+    shots_a = {r[0]: r for r in ba["shots"]["after"]} if ba else {}
+    ea = {k: (v[1], v[2], v[3]) for k, v in ev.items()}
+    if ba is not None:
+        ea.update({k: v for k, v in ba["events"]["after"].items() if k not in ea})  # adds the GK and 'missed a penalty' rows
+    gk_stab_b = [x for x in ba["stability"]["before"]["halves"]["vaep"]["by_group"] if x[0] == "GK"][0][2] if ba else float("nan")
+    gk_stab_a = [x for x in hv["by_group"] if x[0] == "GK"][0][2]
+    def_stab = {m: ([x for x in (ba["stability"]["before"]["halves"][m]["by_group"] if ba else []) if x[0] == "DEF"][0][2] if ba else float("nan"),
+                    [x for x in stab["halves"][m]["by_group"] if x[0] == "DEF"][0][2]) for m in METHODS}
+    fwd_stab = {m: ([x for x in (ba["stability"]["before"]["halves"][m]["by_group"] if ba else []) if x[0] == "FWD"][0][2] if ba else float("nan"),
+                    [x for x in stab["halves"][m]["by_group"] if x[0] == "FWD"][0][2]) for m in METHODS}
     gv = comp["gk_value_by_type"].set_index("type_name")
-    out += [f"**A. VAEP is not a usable goalkeeper rating.** Baseline and VAEP goalkeeper ratings correlate at rho = {gk_rho:.2f} (outfield groups 0.32-0.56). Goalkeepers' VAEP comes almost entirely from "
-            f"carries ('dribble', {gv.loc['dribble', 'sum']:.1f} of the GK total of {gv['sum'].sum():.1f}) and passes ({gv.loc['pass', 'sum']:.1f}); saves sum to {gv.loc['keeper_save', 'sum']:.1f} over the season "
-            "(a save is worth about +0.01, a parry into danger -0.07) because the shot's own result already carries the outcome, penalty saves are worth nothing to the keeper, and goals conceded, errors and own goals are "
-            "not charged at all. The raw GK score tracks the defensive value (rho 0.89), which for a keeper is credit-assignment noise: the first defending action after a dangerous attack absorbs the whole drop in P(concede) "
-            f"(de Gea's +0.254 carry = a 9.8 in a defeat; Guzan 8.8 with two errors and four conceded; Pantilimon 8.0 after conceding six). {comp['gk_share_top10']} of the ten largest disagreements are goalkeepers. "
-            "Options: (1) show only the baseline for goalkeepers on the page and in explanations, with a note; (2) rate goalkeepers in VAEP from shot-related actions only (`keeper_save`, `keeper_punch`, `keeper_claim`, excluding carries and passes), "
-            "which is still weak; (3) accept and document. (1) is the honest choice.", ""]
-    out += [f"**B. VAEP is a goals-and-misses detector for attackers.** It charges every unconverted shot (mean -0.053, up to -0.54) and pays +0.84 for a goal, so the rank correlation of a forward's VAEP with his non-penalty xG is "
-            f"{[r for r in comp['stat_corr']['FWD'] if r[0] == 'xg'][0][4]:.2f} (baseline: {[r for r in comp['stat_corr']['FWD'] if r[0] == 'xg'][0][3]:.2f}); {100 * vp['FWD'][7]:.0f}% of forward appearances have a non-positive VAEP sum and "
-            f"{100 * vp['FWD'][6]:.0f}% of the |value| in the FWD group comes from shots. A converted penalty is worth {comp['penalty_values'].loc['success', 'mean']:+.2f} to the taker (baseline: a full goal), a missed one "
-            f"{comp['penalty_values'].loc['fail', 'mean']:+.2f}. Consequences: {ev['scored exactly 1 goal'][5]} one-goal scorers rate below 6.0 under VAEP against {ev['scored exactly 1 goal'][4]} under the baseline "
-            "(Kane 4.4 with a goal and five shots on target; Fernando 7.7 vs 4.1). This is how VAEP is defined (outcome-based labels), so it is not a bug; if the human wants a less outcome-driven VAEP, the "
-            "standard fix is to value each shot at its xG-based expected value instead of its result (a change in `src/vaep`, not in weights).", ""]
-    out += [f"**C. VAEP ranks defenders by their offensive contribution and ignores results, cards and own goals.** For DEF the raw score correlates 0.83 with offensive value and 0.46 with defensive value (defensive sd {vp['DEF'][3]:.3f} vs offensive {vp['DEF'][1]:.3f}); "
-            f"a defender's goal (+0.8 to +0.98) is about four DEF standard deviations, so every top-20 VAEP defender is a goal-scorer and one-goal defenders average {ev['scored exactly 1 goal (DEF)'][3]:.2f} under VAEP ({ev['scored exactly 1 goal (DEF)'][2]:.2f} baseline). "
-            f"Clearances, aerials and clean sheets have rho of about 0 with VAEP; goals conceded are not charged (DEF rho with goal difference {comp['rho_gd']['DEF'][1]:.2f} vs {comp['rho_gd']['DEF'][0]:.2f} for the baseline), "
-            f"an own goal costs the scorer about {comp['special_results'][comp['special_results']['result_name'] == 'owngoal']['mean'].iloc[0]:+.3f} and a red-card foul about {comp['special_results'][comp['special_results']['result_name'] == 'red_card']['mean'].iloc[0]:+.3f} "
-            f"(own-goal scorers average {ev['own goal'][3]:.2f} under VAEP vs {ev['own goal'][2]:.2f} under the baseline; red cards {ev['red card'][3]:.2f} vs {ev['red card'][2]:.2f}). Within DEF, full-backs average "
-            f"{role.loc[('DEF', 'FB'), 'vaep']:.2f} against {role.loc[('DEF', 'CB'), 'vaep']:.2f} for centre-backs under VAEP (baseline {role.loc[('DEF', 'FB'), 'baseline']:.2f} vs {role.loc[('DEF', 'CB'), 'baseline']:.2f}). "
-            "Inherent to the method; worth a caveat on the page rather than a change.", ""]
-    out += [f"**D. The baseline's team context dominates defenders and goalkeepers.** `goals_conceded`, `clean_sheet` and `xg_faced` are identical for every teammate and explain {100 * tc['DEF']:.0f}% of the DEF raw-score variance and "
-            f"{100 * tc['GK']:.0f}% of the GK variance ({100 * tc['MID']:.0f}% MID, {100 * tc['FWD']:.0f}% FWD). The baseline rating correlates {comp['rho_gd']['DEF'][0]:.2f} with the match goal difference for defenders and "
-            f"{comp['rho_gd']['GK'][0]:.2f} for keepers; team mean ratings track final league points at rho = {comp['rho_team_points'][0]:.2f} (VAEP {comp['rho_team_points'][1]:.2f}); winners average "
-            f"{comp['by_result'].loc['W', ('rating_b', 'mean')]:.2f} and losers {comp['by_result'].loc['L', ('rating_b', 'mean')]:.2f}. A defender who plays 60+ minutes of a 4+ goal concession averages "
-            f"{ev['4+ conceded, 60+ min (DEF)'][2]:.2f} (n = {ev['4+ conceded, 60+ min (DEF)'][1]}) whatever he did, and one with a clean sheet {ev['clean sheet (DEF)'][2]:.2f} (n = {ev['clean sheet (DEF)'][1]}); "
-            "all four Newcastle defenders got 4.3-4.9 in the 1-6 at City with -6.36 of team context between them and a goal (+3.5) unable to offset it. Whether defenders should 'share responsibility' this strongly is a design choice; "
-            f"if the human wants individual actions to matter more, halving the outfield team-context weights (DEF `goals_conceded` -0.8 -> -0.4, `xg_faced` -0.4 -> -0.2, `clean_sheet` 1.0 -> 0.5; MID -0.6 -> -0.3, -0.2 -> -0.1, 0.5 -> 0.25) "
-            f"would cut the DEF team-context share from {100 * tc['DEF']:.0f}% to about {100 * scaled_share(tc['DEF'], 0.5):.0f}% and MID from {100 * tc['MID']:.0f}% to about {100 * scaled_share(tc['MID'], 0.5):.0f}% "
-            "(variance scales with the square of the weights; the individual part is uncorrelated with the team part, r = 0.04). Keep the keeper's -1.0 per goal: a keeper is directly responsible.", ""]
-    out += [f"**E. The position groups pool roles with different profiles.** Among 60+ minute appearances, wingers (RW/LW) average {role.loc[('FWD', 'W'), 'baseline']:.2f} / {role.loc[('FWD', 'W'), 'vaep']:.2f} (baseline / VAEP) and centre-forwards "
-            f"{role.loc[('FWD', 'CF'), 'baseline']:.2f} / {role.loc[('FWD', 'CF'), 'vaep']:.2f} inside the same FWD group; attacking midfielders {role.loc[('MID', 'AM'), 'baseline']:.2f} against {role.loc[('MID', 'CM'), 'baseline']:.2f}-{role.loc[('MID', 'DM'), 'baseline']:.2f} "
-            f"for central midfielders in the baseline. The MID/FWD boundary depends on how StatsBomb recorded the formation (RM/LM are MID, RW/LW are FWD): {pos['wide']['players_both']} players appear as both and "
-            f"{pos['players_multi']} of {pos['n_players']} players have two or more groups; a forward reclassified as a midfielder loses on average "
-            f"{abs(pos['paired']['baseline'][pos['paired']['baseline']['pair'] == 'FWD->MID']['diff'].mean()):.2f} (baseline) / {abs(pos['paired']['vaep'][pos['paired']['vaep']['pair'] == 'FWD->MID']['diff'].mean()):.2f} (VAEP) "
-            "for the same player. The assignment itself is correct and well implemented (most minutes, one table, no leaks); the question is whether the four contract groups are the right granularity. Concrete, contract-preserving "
-            "options: (1) baseline FWD weights that stop punishing the centre-forward's job - `aerials_lost` -0.10 -> -0.05 and `possession_lost` -0.20 -> -0.15 (a centre-forward loses 2.6 aerials and 3.9 possessions a match on average), "
-            "`aerials_won` 0.15 -> 0.20; (2) treat Right/Left Midfield (ids 12/16) as forwards in `positions.py` (a CLAUDE.md change: 'wingers are forwards' arguably includes a 4-4-2 winger).", ""]
-    out += [f"**F. Penalties.** The baseline counts a penalty goal as a full goal (3.0) and a miss at -2.0; VAEP gives the taker {comp['penalty_values'].loc['success', 'mean']:+.2f} / {comp['penalty_values'].loc['fail', 'mean']:+.2f}. "
-            f"Penalty scorers average {ev['converted a penalty'][2]:.2f} (baseline) vs {ev['converted a penalty'][3]:.2f} (VAEP). A 0.79-xG kick is not a 0.1-xG header; a `penalties_scored` stat weighted at about 1.0-1.5 "
-            "(with `goals` then counting open-play goals only) would be more defensible than 3.0, and is an FPL-mappable stat (`penalties_missed` already exists). Also note `key_passes` includes assists, so an assist earns 2.0 + 0.5 in MID (documented, mild double count).", ""]
-    out += [f"**G. Baseline goalkeepers reward save volume.** `saves` (+0.5) and `xg_faced` (+0.8) both grow with the number of shots a keeper faces, so a keeper behind a porous defence can rate highly (Fabianski 8.24 raw / 13 saves in a 1-2 defeat); "
-            f"the extremes are legitimate (Forster's 11-save 0-0 at Arsenal is the top GK rating), and keepers with 3+ conceded still average {5.74:.2f}. The split-half correlation of goalkeeper baseline ratings is only "
-            f"{[x for x in hb['by_group'] if x[0] == 'GK'][0][2]:.2f} (n = {[x for x in hb['by_group'] if x[0] == 'GK'][0][1]}), i.e. almost no persistent player signal; part of that is football (shot-stopping is noisy), "
-            "part is the volume design. A 'goals prevented' formulation (`xg_faced - goals_conceded` at about 1.0, `saves` at 0.25) would reduce the volume effect; low priority.", ""]
-    out += [f"**H. Short cameos sit slightly below average** (10-20 minutes: {buckets['baseline']['bucket'].loc['10-20', 'mean']:.2f} baseline, {buckets['vaep']['bucket'].loc['10-20', 'mean']:.2f} VAEP; see 3.4). Defensible, documented in `weights.py`; "
-            "listed here only so the human decides consciously.", ""]
-    out += ["### (iii) Things that look right", "",
-            f"- Every distribution rule, for both methods: means 6.500 overall and in every group, {rules['baseline']['tens']} and {rules['vaep']['tens']} ratings of 10.0 (0.03%), min 3.4, max 10.0, one decimal, 10-minute rule, all 380 matches, "
-            "11 rated starters in 754 of 760 team-matches with the 6 exceptions all early injuries.",
-            "- The isolation rule holds exactly through the public functions and the saved scalers (differences of 0.0), the VAEP folds and holdout are leak-free, `raw_vaep` equals the summed action values, and the web payloads equal the parquet files for all 10,469 player rows.",
-            "- Minutes include stoppage time (up to 103.6), substitute goalkeepers are rated as GK, the one outfield player who went in goal keeps his majority group, and the most-minutes rule resolves half-time role swaps sensibly.",
-            "- The baseline top 20 are all legitimately great performances; the five notable matches read correctly for the baseline (Mahrez, Huth, Vardy, Aguero/De Bruyne/Silva, the four Bridge scorers) and for VAEP's attackers.",
-            f"- The baseline penalises what fans expect it to penalise: red cards average {ev['red card'][2]:.2f}, own goals {ev['own goal'][2]:.2f}, errors leading to a shot {ev['error leading to a shot'][2]:.2f}, conceded penalties {ev['penalty conceded'][2]:.2f}.",
-            f"- The baseline is the more stable signal (split-half Pearson {hb['pearson']:.2f} vs {hv['pearson']:.2f}; odd/even {stab['odd_even']['baseline']['pearson']:.2f} vs {stab['odd_even']['vaep']['pearson']:.2f}), above goals + assists per 90 ({stab['benchmarks']['goals + assists per 90']['pearson']:.2f}).",
-            f"- The two methods agree moderately (Spearman {comp['spearman_rating']:.2f} per player-match, {comp['season']['spearman']:.2f} on season averages; MID/FWD about 0.55, DEF 0.32, GK {gk_rho:.2f}) and their disagreements are explainable from the data every time (4.2).",
-            "- VAEP model quality claimed in `reports/vaep_splits.md` (AUC about 0.80 on never-seen games, Brier below the base rate) is consistent with the recorded metrics file and the leak-free split structure verified here; the AUC values themselves were not recomputed.",
-            ""]
+    keeper_save_after = shots_a.get("keeper save (all)", [None, None, None, None, float("nan")])[4]
+    keeper_save_before = shots_b.get("keeper save (all)", [None, None, None, None, float("nan")])[4]
+
+    out += [f"**A. VAEP goalkeepers (page shows the baseline).** Achieved: the page no longer shows the VAEP keeper rating, and the xG labels incidentally made the VAEP keeper score more meaningful: "
+            f"a save is now worth {keeper_save_after:+.3f} on average (before {keeper_save_before:+.3f}); keeper saves contribute {gv.loc['keeper_save', 'sum']:.0f} of the GK total of {gv['sum'].sum():.0f} (before: carries and passes dominated, saves were negative); "
+            f"Spearman(baseline, VAEP) for GK rose from {ag_b['GK']:.2f} to {gk_rho:.2f}; keepers with 3+ conceded average {ea['GK, 3+ conceded'][2]:.2f} under VAEP (baseline {ea['GK, 3+ conceded'][1]:.2f}). Not achieved: the VAEP keeper score still ignores goals conceded "
+            f"(Spearman with goal difference {comp['rho_gd']['GK'][1]:+.2f}) - a keeper who faces many big chances and concedes two can rate 9.4 (Mignolet, 0-2 at West Ham) - and its split-half stability is {gk_stab_a:.2f} (before {gk_stab_b:.2f}). "
+            "Verdict: the display rule is right and should stay; the VAEP keeper number remains unfit to show on its own.", ""]
+    shot_goal_a = shots_a.get("open-play goal", [None, None, None, None, float("nan")])[4]
+    shot_miss_a = shots_a.get("open-play shot not scored", [None, None, None, None, float("nan")])[4]
+    out += [f"**B. VAEP shots by xG.** Achieved the stated aim: an open-play goal is now worth {shot_goal_a:+.3f} to the shooter and a miss {shot_miss_a:+.3f} (before +0.838 / -0.053; the builders' figures are confirmed "
+            "to three decimals in 7.8), so VAEP no longer punishes a striker for shooting: the share of forward appearances with a non-positive VAEP sum fell from "
+            f"{100 * ba['vaep_sign']['before']['FWD']:.0f}% to {100 * ba['vaep_sign']['after']['FWD']:.0f}%, Fernando's 1.29-xG-no-goal match went from 4.1 to 7.7, agreement with the baseline rose from "
+            f"{ag_b['all']:.2f} to {ag_a['all']:.2f} (season averages {ag_b['season']:.2f} -> {ag_a['season']:.2f}), and the VAEP rating became more stable overall ({st_b['vaep'][0]:.2f} -> {hv['pearson']:.2f} Pearson; "
+            f"FWD {fwd_stab['vaep'][0]:.2f} -> {fwd_stab['vaep'][1]:.2f}, MID likewise up). **Introduced three problems.** (1) *Goals barely count*: scoring is worth about 0.10 more than missing, a five-goal Aguero is an 8.9 "
+            f"(was 10.0) and outside the top 20, Huth's two headers v City are a 7.1 (was 9.9), one-goal scorers average {ea['scored exactly 1 goal'][2]:.2f} under VAEP (before {eb.get('scored exactly 1 goal (any kind)', (0, 0, 7.87))[2]:.2f}; baseline {ea['scored exactly 1 goal'][1]:.2f}), "
+            f"and {comp['low_scorers_vaep'].shape[0]} goal-scorers rate below 5.5 - a match rating that does not reward the goal is hard to present to fans. (2) *The outcome lottery moved to the defence*: because a state that contains a "
+            "0.5-xG shot keeps P(concede) at 0.5 whether or not the shot went in, the defending team's next action within 10 seconds (a clearance, tackle or save) absorbs the whole drop: single clearances worth +0.50 "
+            "(Steve Cook 9.9, Kouyate 9.5) and tackles worth +0.37 (van Aanholt 9.8 in a 0-2 home defeat) now top the DEF list, nine of the VAEP top 20 have neither goal nor assist, and DEF split-half stability fell from "
+            f"{def_stab['vaep'][0]:.2f} to {def_stab['vaep'][1]:.2f} (every other group rose). (3) *Penalties got worse*, see below. Verdict: the direction is right but the implementation over-corrects; see the options below.", ""]
+    pen_b = eb.get("converted a penalty", (0, float("nan"), float("nan")))
+    pen_a = ea["converted a penalty"]
+    out += [f"**Penalties under xG labels (builders' flag i).** Confirmed: the kick is worth {pv.loc['success', 'mean']:+.3f} to a taker who scores and {pv.loc['fail', 'mean']:+.3f} to one who misses "
+            f"(before +0.063 / -0.752). Mechanism, re-derived from the cached features and the fold models: the {ps.get('n', 91)} penalty states carry a label of {ps.get('label_mean', float('nan')):.3f} but are predicted at "
+            f"{ps.get('pred_mean', float('nan')):.3f} on average - {ps.get('pred_scored', float('nan')):.3f} when scored and {ps.get('pred_missed', float('nan')):.3f} when missed - against the fixed 0.792 prior for the state before the kick. "
+            "The outcome one-hot in the state features is doing the damage (a missed penalty state looks like a failed open-play shot to the trees; 91 states cannot overrule 8,500), not just the small sample. "
+            f"Effect on ratings: penalty scorers average {pen_a[2]:.2f} under VAEP (before {pen_b[2]:.2f}; baseline {pen_a[1]:.2f}), i.e. a scored penalty now rates its taker *below* the 6.5 average, and misses average "
+            f"{ea['missed a penalty'][2]:.2f}. **Not acceptable** as a published number (74 scored penalties a season, every one visibly wrong on the page). Options, cheapest first: (a) override the predicted P(scores) of a "
+            "`shot_penalty` state with its label (the constant 0.7835 plus any rebound), which makes the kick worth about -0.01 whatever the outcome - a two-line change in `rate` before `formula.value`; "
+            "(b) more generally use the shot's own xG as the post-shot state value for every shot type (the state after a shot is the chance that was taken), which also fixes problem B(2) at the source because "
+            "the next defensive action then starts from the xG-state rather than a model guess; (c) drop the result one-hot from shot-type states or add a penalty indicator feature and retrain - slower and less certain.", ""]
+    out += [f"**C. VAEP for defenders.** Partly achieved: own goals are now charged (own-goal scorers {ea['own goal'][2]:.2f} under VAEP, before {eb.get('own goal', (0, 0, 6.42))[2]:.2f}), and a defender's goal no longer "
+            f"dominates his group (one-goal defenders {ea['scored exactly 1 goal (DEF)'][2]:.2f}, before 8.52). Not achieved and partly worse: results and cards are still invisible (DEF Spearman with goal difference "
+            f"{comp['rho_gd']['DEF'][1]:+.2f}; red cards {ea['red card'][2]:.2f}), full-backs still out-rate centre-backs ({role.loc[('DEF', 'FB'), 'vaep']:.2f} vs {role.loc[('DEF', 'CB'), 'vaep']:.2f}), and the clearance/tackle "
+            f"credit lottery (B(2)) cut DEF stability to {def_stab['vaep'][1]:.2f} and put defenders from beaten teams at the top of the list. Verdict: keep the README caveat; fix B(2) before trusting VAEP defender ratings.", ""]
+    out += [f"**D. Baseline team context halved.** Achieved: the team-context share of raw variance fell from {100 * tcb['DEF']:.0f}% to {100 * tc['DEF']:.0f}% for DEF and from {100 * tcb['MID']:.0f}% to {100 * tc['MID']:.0f}% for MID "
+            f"(GK unchanged at {100 * tc['GK']:.0f}%, as intended); Spearman(rating, goal difference) for defenders {ba['result']['before']['rho_b_DEF']:.2f} -> {ba['result']['after']['rho_b_DEF']:.2f}; defenders through a 4+ goal "
+            f"concession {eb.get('4+ conceded, 60+ min (DEF)', (0, 5.28))[1]:.2f} -> {ea['4+ conceded, 60+ min (DEF)'][1]:.2f}, clean-sheet defenders {eb.get('clean sheet (DEF)', (0, 7.28))[1]:.2f} -> {ea['clean sheet (DEF)'][1]:.2f}; "
+            f"split-half stability of the baseline rose ({st_b['baseline'][0]:.2f} -> {hb['pearson']:.2f}; DEF {def_stab['baseline'][0]:.2f} -> {def_stab['baseline'][1]:.2f}) and agreement with VAEP for DEF rose "
+            f"({ag_b['DEF']:.2f} -> {ag_a['DEF']:.2f}). Baseline ratings moved little (Spearman old vs new {ba['old_vs_new'][0][2]:.3f}; mean |change| {ba['old_vs_new'][0][7]:.2f}). Cost: busy defenders in heavy defeats rate higher "
+            "(Demichelis 7.6 in the 1-3), and the knock-on effect on short substitutes below. Verdict: a clear improvement; keep.", ""]
+    out += [f"**E. FWD weights eased, roles pooled.** Achieved in part: centre-forwards rose from {ba['roles']['before'].loc[('FWD', 'CF'), 'baseline']:.2f} to {role.loc[('FWD', 'CF'), 'baseline']:.2f} against wingers "
+            f"{ba['roles']['before'].loc[('FWD', 'W'), 'baseline']:.2f} -> {role.loc[('FWD', 'W'), 'baseline']:.2f} (gap {ba['roles']['before'].loc[('FWD', 'W'), 'baseline'] - ba['roles']['before'].loc[('FWD', 'CF'), 'baseline']:.2f} -> "
+            f"{role.loc[('FWD', 'W'), 'baseline'] - role.loc[('FWD', 'CF'), 'baseline']:.2f}). The MID spread is unchanged (attacking midfielders {role.loc[('MID', 'AM'), 'baseline']:.2f} vs central {role.loc[('MID', 'CM'), 'baseline']:.2f}) "
+            "because nothing was changed there, and the 12/16 reclassification was skipped by decision. Verdict: adequate; the remaining spreads are within 0.15 and can wait.", ""]
+    out += [f"**F. Penalties in the baseline.** Achieved: penalty scorers average {pen_a[1]:.2f} (before {pen_b[1]:.2f}), one-goal scorers {ea['scored exactly 1 goal'][1]:.2f}; `key_passes` no longer double-counts assists. "
+            "Verdict: done. (The VAEP side of penalties is the open problem above.)", ""]
+    out += ["**G. Baseline keeper save volume** - skipped by decision; unchanged (Forster's eleven saves remain the top GK rating; GK baseline split-half still about 0.10 with 19 keepers). Acceptable to leave.", ""]
+    if sb is not None:
+        off = ", ".join(f"{g} {sa[f'p30_{g}'] - sa[f'cameo_median_raw_{g}']:+.2f}" for g in ("DEF", "MID", "FWD"))
+        out += [f"**H / short substitutes (builders' flag ii).** Confirmed: 10-20 minute baseline cameos fell from {sb['mean']:.2f} to {sa['mean']:.2f}, with {100 * sa['below6']:.0f}% now below 6.0 (before {100 * sb['below6']:.0f}%); "
+                f"20-45 minute appearances fell from {ba['buckets']['before']['baseline']['bucket'].loc['20-45', 'mean']:.2f} to {ba['buckets']['after']['baseline']['bucket'].loc['20-45', 'mean']:.2f}. The cameos themselves did not change "
+                f"(median raw {sb['cameo_median_raw_MID']:.2f} -> {sa['cameo_median_raw_MID']:.2f} for MID): the starters around them did. Halving the team context lifted the bottom of every group - the 25th percentile of DEF raw scores "
+                f"moved from {sb['p25_DEF']:.2f} to {sa['p25_DEF']:.2f}, the share of 60+ minute defenders with a negative raw score from {100 * sb['share_neg_starters_DEF']:.0f}% to {100 * sa['share_neg_starters_DEF']:.0f}% - so a quiet cameo "
+                f"that used to sit at the {100 * sb['cameo_pct_DEF']:.0f}th percentile of DEF now sits at the {100 * sa['cameo_pct_DEF']:.0f}th (MID {100 * sb['cameo_pct_MID']:.0f}th -> {100 * sa['cameo_pct_MID']:.0f}th, FWD {100 * sb['cameo_pct_FWD']:.0f}th -> {100 * sa['cameo_pct_FWD']:.0f}th). "
+                "Is it acceptable? The size is small (-0.16 on the mean) but the visible effect is not: two thirds of cameos now show red on the page, which reads as 'substitutes play badly' rather than 'substitutes did little'. "
+                f"Options: (a) a minutes-aware offset added to the raw score inside `rate_match` (a function of the row's own minutes, so the isolation rule holds), e.g. `offset = c_group * max(0, 60 - minutes) / 60`; to return the median "
+                f"cameo to about the 30th percentile of its group the full offset at 0 minutes would need to be roughly {off} raw points, i.e. about one quarter of a quiet starter's score - document it in `weights.py` as the "
+                "'low activity' rule; (b) re-tune the per-action negatives that make up most of a cameo's score (`passes_incomplete` -0.05/-0.06 and `possession_lost` -0.25/-0.15: a cameo averages 1.4 incomplete passes and 0.8 possessions "
+                "lost), which would move the median cameo by only about 0.1 raw and the percentile by 2-3 points - not enough on its own; (c) accept and relabel the colour bands for substitutes. (a) is the one that addresses the cause.", ""]
+    out += ["### (iii) Things that look right after the changes", "",
+            f"- Every distribution rule, for both methods, on the regenerated files: means 6.500 overall and per group, {rules['baseline']['tens']} and {rules['vaep']['tens']} tens, min 3.4, max 10.0, one decimal, 10-minute rule, "
+            "all 380 matches, 11 rated starters except the 6 early injuries; isolation exact; splits identical to the frozen ones and leak-free; web payloads equal the parquet files.",
+            f"- The baseline after D/E/F: stability up ({st_b['baseline'][0]:.2f} -> {hb['pearson']:.2f}), agreement with VAEP up ({ag_b['all']:.2f} -> {ag_a['all']:.2f} overall), team context no longer dominates defenders, "
+            f"penalties no longer count as full goals, red cards ({ea['red card'][1]:.2f}), own goals ({ea['own goal'][1]:.2f}) and errors ({ea['error leading to a shot'][1]:.2f}) are still penalised, and the top 20 is still a list of great performances.",
+            "- The xG-label VAEP for creative midfielders and forwards: Cazorla, Ramsey, Payet, Eriksen and Mahrez now lead the single-match list on chances created, Fernando-type misses are no longer punished, MID and FWD stability rose sharply.",
+            "- The goalkeeper display rule on the page and the README caveat.", ""]
     return out
 
 
@@ -429,11 +565,14 @@ def build_report(skip_tests: bool = False) -> str:
     comp = analysis.method_comparison(data)
     stab = analysis.stability(data)
     log.info("analysis done (%.0fs)", time.time() - t0)
+    ba = before_after.compute(data)
+    log.info("before/after done (%.0fs)", time.time() - t0)
 
-    lines = [f"# Validation report: Premier League 2015/16 player ratings (Step 4)", "",
+    lines = [f"# Validation report: Premier League 2015/16 player ratings (Step 4, re-validated after the weight and label decisions)", "",
              f"Generated by `python -m src.validation.validate` on {dt.date.today().isoformat()} from `data/processed` (StatsBomb Open Data, Premier League 2015/16, 380 matches; "
              "https://github.com/statsbomb/open-data). Written by an independent verifier who did not build the rating code; the builders' reports in `reports/` were treated as claims and re-checked. "
-             "All tables are recomputed on every run; paragraphs marked as the verifier's judgement describe the run of 2026-10-31.", "",
+             "Sections 1-6 describe the CURRENT outputs; section 7 compares them with the frozen pre-decision outputs in `data/processed/before/`. The pre-decision report is `reports/validation_before.md`. "
+             "All tables are recomputed on every run; paragraphs marked as the verifier's judgement describe the run they are dated with.", "",
              "## Headline numbers", ""]
     hb, hv = stab["halves"]["baseline"], stab["halves"]["vaep"]
     lines += [f"- Test suite: `{tests['summary']}`; {len(tests['expected_failures'])} expected failures (Steps 5-6 not built), {len(tests['unexpected_failures'])} unexpected." if tests else "- Test suite: skipped.",
@@ -442,16 +581,31 @@ def build_report(skip_tests: bool = False) -> str:
               f"- Spearman between the methods: {comp['spearman_rating']:.3f} per player-match (GK {[s for g, n, s, p in comp['by_group'] if g == 'GK'][0]:.3f}, DEF {[s for g, n, s, p in comp['by_group'] if g == 'DEF'][0]:.3f}, "
               f"MID {[s for g, n, s, p in comp['by_group'] if g == 'MID'][0]:.3f}, FWD {[s for g, n, s, p in comp['by_group'] if g == 'FWD'][0]:.3f}); {comp['season']['spearman']:.3f} on season averages ({comp['season']['n_players']} players).",
               f"- Split-half stability (Pearson / Spearman, {hb['n']} players): baseline {hb['pearson']:.3f} / {hb['spearman']:.3f}, VAEP {hv['pearson']:.3f} / {hv['spearman']:.3f}.",
-              "- Rule violations or bugs found: " + ("none." if all(ok for m in METHODS for _, ok, _ in rules[m]["checks"]) and all(ok for _, ok, _ in cons) and not (tests and tests["unexpected_failures"]) else "**see section 6 (i)**."),
-              "- Main modelling concerns (section 6 ii): VAEP goalkeeper ratings are noise; VAEP is outcome-driven for attackers and blind to results, cards and own goals; the baseline's team context explains "
-              f"{100 * [s for g, s, *_ in comp['team_context'] if g == 'DEF'][0]:.0f}% of defender raw variance; roles pooled inside FWD/MID differ by 0.2-0.3 in mean rating.", ""]
+              "- Rule violations or bugs found: " + ("none." if all(ok for m in METHODS for _, ok, _ in rules[m]["checks"]) and all(ok for _, ok, _ in cons) and not (tests and tests["unexpected_failures"]) else "**see section 6 (i)**.")]
+    if ba is not None:
+        agb, aga = ba["agree"]["before"], ba["agree"]["after"]
+        sb_, sa_ = ba["stability"]["before"]["halves"], ba["stability"]["after"]["halves"]
+        tcb, tca = ba["team_context"]["before"], ba["team_context"]["after"]
+        lines += ["", "Before -> after the Step 4 decisions (details in section 7):", "",
+                  md_table(["quantity", "before", "after"], [
+                      ["Spearman(baseline, VAEP), all player-matches", fmt(agb["all"]), fmt(aga["all"])],
+                      ["... GK / DEF / MID / FWD", " / ".join(fmt(agb[g], 2) for g in POSITION_GROUPS), " / ".join(fmt(aga[g], 2) for g in POSITION_GROUPS)],
+                      ["... season averages", fmt(agb["season"]), fmt(aga["season"])],
+                      ["split-half Pearson, baseline / VAEP", f"{sb_['baseline']['pearson']:.3f} / {sb_['vaep']['pearson']:.3f}", f"{sa_['baseline']['pearson']:.3f} / {sa_['vaep']['pearson']:.3f}"],
+                      ["team-context share of baseline raw variance, DEF / MID / GK", " / ".join(f"{100 * tcb[g]:.0f}%" for g in ("DEF", "MID", "GK")) if tcb else "n/a", " / ".join(f"{100 * tca[g]:.0f}%" for g in ("DEF", "MID", "GK"))],
+                      ["VAEP value of a converted / missed penalty to the taker", f"{ba['shots']['before'][2][4]:+.3f} / {ba['shots']['before'][3][4]:+.3f}", f"{ba['shots']['after'][2][4]:+.3f} / {ba['shots']['after'][3][4]:+.3f}"],
+                      ["VAEP value of an open-play goal / miss / keeper save", f"{ba['shots']['before'][0][4]:+.3f} / {ba['shots']['before'][1][4]:+.3f} / {ba['shots']['before'][6][4]:+.3f}", f"{ba['shots']['after'][0][4]:+.3f} / {ba['shots']['after'][1][4]:+.3f} / {ba['shots']['after'][6][4]:+.3f}"],
+                      ["baseline 10-20 minute cameos: mean / share below 6.0", f"{ba['subs']['before']['mean']:.2f} / {100 * ba['subs']['before']['below6']:.0f}%", f"{ba['subs']['after']['mean']:.2f} / {100 * ba['subs']['after']['below6']:.0f}%"],
+                      ["penalty scorers' mean rating, baseline / VAEP", f"{ba['events']['before']['converted a penalty'][1]:.2f} / {ba['events']['before']['converted a penalty'][2]:.2f}", f"{ba['events']['after']['converted a penalty'][1]:.2f} / {ba['events']['after']['converted a penalty'][2]:.2f}"],
+                  ]), ""]
     lines += section_tests(tests)
     lines += section_rules(rules, iso, cons)
     lines += section_positions(pos)
     lines += section_eye(data, tops, matches, buckets)
     lines += section_compare(comp)
     lines += section_stability(stab)
-    lines += section_findings(rules, cons, iso, tests, pos, comp, stab, buckets)
+    lines += section_findings(rules, cons, iso, tests, pos, comp, stab, buckets, ba)
+    lines += section_before_after(ba, data)
     lines += ["---", "", f"Report generated in {time.time() - t0:.0f} s. Data: StatsBomb Open Data (https://github.com/statsbomb/open-data).", ""]
     return "\n".join(lines)
 

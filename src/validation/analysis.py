@@ -17,8 +17,13 @@ MINUTE_LABELS = ["10-20", "20-45", "45-70", "70-85", "85+"]
 
 # ------------------------------------------------------------------------- helpers
 def stat_row(data: Data, match_id: int, player_id: int) -> pd.Series:
+    """The player's baseline stats for the match; ``goals`` is made to include penalties
+    whatever the stats version (after the Step 4 decisions ``goals`` excludes them)."""
     s = data.stats
-    return s[(s["match_id"] == match_id) & (s["player_id"] == player_id)].iloc[0]
+    row = s[(s["match_id"] == match_id) & (s["player_id"] == player_id)].iloc[0].copy()
+    if "penalties_scored" in row.index:
+        row["goals"] = row["goals"] + row["penalties_scored"]
+    return row
 
 
 def contributions(data: Data, match_id: int, player_id: int, group: str, k: int = 3) -> list[tuple[str, float, float, float]]:
@@ -301,6 +306,8 @@ def method_comparison(data: Data) -> dict:
     out["rho_team_points"] = (float(spearmanr(tm["rating_b"], tm["pts"])[0]), float(spearmanr(tm["rating_v"], tm["pts"])[0]))
     # events with a fixed meaning: goals, penalties, own goals, red cards, errors
     stt = data.stats.merge(both[["match_id", "player_id", "rating_b", "rating_v"]], on=["match_id", "player_id"])
+    if "penalties_scored" in stt.columns:
+        stt = stt.assign(goals=stt["goals"] + stt["penalties_scored"])
     ev = []
     one = stt[stt["goals"] == 1]
     ev.append(["scored exactly 1 goal", len(one), float(one["rating_b"].mean()), float(one["rating_v"].mean()), int((one["rating_b"] < 6).sum()), int((one["rating_v"] < 6).sum())])
