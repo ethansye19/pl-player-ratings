@@ -188,6 +188,9 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   (dataclass/namedtuple; `why` is one line, >= 15 chars), `WEIGHTS: dict[group, dict[stat, Weight]]`
   with an entry for every group in `POSITION_GROUPS` (at least 8 stats each); weight
   vectors differ between groups. Document the stat definitions in the module docstring.
+  `LABELS[stat]` gives the fan-facing label; `weight_of(group, stat)` returns 0.0 for stats
+  outside a group's profile (they are absent from `WEIGHTS[group]`, so iterate
+  `WEIGHTS[group]`, not `STATS`, when listing a player's contributions).
 - `stats.py`: `player_match_stats(match_id, events, lineups) -> DataFrame` with
   `match_id, player_id, position_group, minutes` + one column per stat, one row per
   player in that match's lineups (zeros for players with no events).
@@ -207,7 +210,9 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   `vaep_splits.json` = `{"holdout": {"train": [...], "score": [...]}, "folds": [{"fold_id": 0, "train": [...], "score": [...]}, ...]}`,
   `action_values.parquet` (full season, cross-fitted, `fold_id` per game), the models,
   `raw_vaep_holdout.parquet` and `raw_vaep.parquet`. CLI `python -m src.vaep.train`.
-  Document the splits in `reports/vaep_splits.md`.
+  Document the splits in `reports/vaep_splits.md`. Features and labels are cached in
+  `vaep_features.parquet` / `vaep_labels.parquet`; settings and held-out AUC/Brier per split
+  are in `models/vaep_metrics.json`; `python -m src.vaep.report` regenerates the report.
 - `rate.py`: `load_model_for_match(match_id)` (the fold model whose training set
   excludes that match), `rate_match(match_id, actions, lineups, model) -> DataFrame`
   (contract; `raw_score` = sum of `vaep_value` over the player's actions in that match;
@@ -229,7 +234,9 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
 - `bands.py`: `rating_band(rating) -> "red" | "orange" | "green" | "blue" | "unrated"`
   (red < 6.0, orange 6.0–6.9, green 7.0–7.9, blue >= 8.0, `None` -> unrated).
 - CLI `python -m src.scale.apply --method baseline|vaep` fits on `raw_<method>.parquet`,
-  writes `scaler_<method>.json` and `ratings_<method>.parquet`.
+  writes `scaler_<method>.json` and `ratings_<method>.parquet`. The ratings file keeps any extra
+  input columns; a saved scaler embeds the curve anchors and refuses to load under a different
+  curve, so re-run `apply` after editing the curve.
 
 ### `src/explain/`
 - `inputs.py`: `explanation_input(match_id, player_id, method, k=5) -> dict`:
@@ -302,6 +309,12 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
 ```
 Rating is `null` exactly when `minutes < 10`. Colours: red < 6.0, orange 6.0–6.9,
 green 7.0–7.9, blue >= 8.0, grey = unrated. A toggle switches between methods.
+`validate_payload` (src/pipeline/export_web.py) also requires `schema_version == 1`,
+`raw_scores` keys equal to `methods`, numeric non-negative `minutes`, boolean `is_starter`
+and 11 starters per side; per-player `minute_on` / `minute_off` are optional (the page shows
+a substitute's entry minute when present). A single-method payload (`["baseline"]`) is valid;
+the FPL pipeline must produce exactly this shape. `python -m src.pipeline.export_web` writes
+`web/data/` for 2015/16; serve with `python -m http.server 8810 --directory web`.
 Regenerate the sample with `python tests/fixtures/make_sample_match.py`. Serve with
 `.venv/Scripts/python -m http.server 8810 --directory web`.
 
