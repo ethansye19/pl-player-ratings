@@ -192,6 +192,48 @@ def correlation_table(raw: pd.DataFrame, before_raw: pd.DataFrame) -> pd.DataFra
     return pd.DataFrame(rows)
 
 
+def _mean(frame: pd.DataFrame, mask, col: str) -> float:
+    return float(frame.loc[mask, col].mean()) if mask.any() else float("nan")
+
+
+def consequences_text(values: pd.DataFrame, before: pd.DataFrame | None) -> str:
+    """Where the credit for a chance lands under xG labels, with numbers from the action values."""
+    av = values.sort_values(["game_id", "action_id"]).reset_index(drop=True)
+    is_shot = av["type_name"].isin(["shot", "shot_penalty", "shot_freekick"]).to_numpy()
+    same_game = av["game_id"].to_numpy() == np.roll(av["game_id"].to_numpy(), 1)
+    after_shot = np.roll(is_shot, 1) & same_game
+    after_shot[0] = False
+    save = (av["type_name"] == "keeper_save").to_numpy()
+    clear_after = after_shot & (av["type_name"] == "clearance").to_numpy()
+    pen = (av["type_name"] == "shot_penalty").to_numpy()
+    pen_prev = np.roll(pen, -1) & np.roll(same_game, -1)  # the action right before a penalty, in the same game
+    pen_prev[-1] = False
+    foul_before_pen = pen_prev & (av["type_name"] == "foul").to_numpy()
+    text = (
+        "**Consequences for who gets the credit.** VAEP values an action by the change in P(scores) / P(concedes) "
+        "from the previous game state, so with xG labels the chance is credited to the actions that create it and the "
+        "shot itself is worth only the difference between its state and the one before it: an open-play goal "
+        f"{_mean(av, (av['type_name'] == 'shot') & (av['result_name'] == 'success'), 'offensive_value'):+.3f} on average "
+        f"and a shot that is not scored {_mean(av, (av['type_name'] == 'shot') & (av['result_name'] == 'fail'), 'offensive_value'):+.3f}. "
+        "Because a shot's state keeps its xG whatever the outcome, the drop back to a low probability happens at the "
+        "*next* action within 10 seconds (the formula zeroes the previous state after a longer gap): a keeper save "
+        f"is now worth {_mean(av, save, 'vaep_value'):+.3f} on average"
+        + (f" (before {_mean(before, before['type_name'] == 'keeper_save', 'vaep_value'):+.3f})" if before is not None else "")
+        + f", a clearance straight after a shot {_mean(av, clear_after, 'vaep_value'):+.3f}: keepers and blockers are "
+        "credited with the chances they stop, which is what lifts the goalkeepers' raw scores. "
+        "Penalties: the label of a penalty state is its constant xG (0.7835) for scored and missed kicks alike, and "
+        "socceraction's formula fixes the pre-kick probability at 0.792, so the kick itself should be worth about 0 to "
+        f"the taker; in practice it is {_mean(av, pen & (av['result_name'] == 'success'), 'offensive_value'):+.3f} when scored and "
+        f"{_mean(av, pen & (av['result_name'] == 'fail'), 'offensive_value'):+.3f} when missed, because the models under-predict "
+        f"the 91 penalty states (too few to be isolated from other shots -- a holdout experiment with `min_child_samples=20` "
+        "instead of 100 moved the mean prediction only from 0.57 to 0.62 against a label of 0.78 -- and the result one-hot "
+        "pulls missed kicks towards failed shots). "
+        f"The chance's value lands where it was won: the foul that concedes the penalty is worth "
+        f"{_mean(av, foul_before_pen, 'vaep_value'):+.3f} to the fouler (n={int(foul_before_pen.sum())}).\n"
+    )
+    return text
+
+
 def build_report() -> str:
     metrics = json.loads(METRICS_PATH.read_text(encoding="utf-8"))
     splits = json.loads(SPLITS_PATH.read_text(encoding="utf-8"))
@@ -325,6 +367,7 @@ def build_report() -> str:
             md_table(shot_value_table(values, before_values), {"default": 4, "n": 0})
             + ("\n" if before_values is not None else "\n(no `data/processed/before/action_values.parquet` snapshot found, so only the new values are shown)\n")
         )
+        add(consequences_text(values, before_values))
         if before_raw is not None:
             add(
                 "**Correlation of the new raw scores with the previous ones** (same player-matches, cross-fitted "
