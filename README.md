@@ -82,6 +82,21 @@ Build summary (full details in `reports/ingest.md`):
 - **Web** (`web/`): static page, pick a match, both lineups on a pitch with colour-coded
   ratings (red < 6, orange 6–6.9, green 7–7.9, blue 8+), Baseline/VAEP toggle.
 
+## Step 5: why this rating?
+
+```powershell
+.venv\Scripts\python -m src.explain.explain --match 3754079 --player 3237 --method both
+```
+
+`src/explain/` builds a structured input from ONLY that player's data in that match (the
+rating, the raw score and the top five positive and negative items: stat contributions for
+the baseline, individual actions for VAEP), renders it with a provider, and verifies that
+every number in the text appears in the input. Providers are selected with
+`RATING_LLM_PROVIDER`: `template` (default, deterministic, no key) or `anthropic`
+(Claude via the official SDK; needs `ANTHROPIC_API_KEY`, `pip install anthropic`, and
+`RATING_LLM_MODEL` to override the default `claude-opus-5-5`). An LLM answer that fails the
+number check is replaced by the template text and flagged `verified=False`.
+
 ## Data credits
 
 - Development and validation data: **StatsBomb Open Data**, Premier League 2015/16

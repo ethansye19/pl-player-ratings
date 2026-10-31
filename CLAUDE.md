@@ -262,7 +262,9 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   `TemplateProvider`, deterministic, offline; `anthropic` -> `AnthropicProvider`, which
   requires `ANTHROPIC_API_KEY` and raises an error naming that variable when missing;
   anything else -> `ValueError`). `RATING_LLM_MODEL` overrides the model (default
-  `claude-sonnet-5-5`). The LLM prompt must forbid mentioning anything absent from the input.
+  `claude-opus-5-5`; the `anthropic` package is not in the pinned environment and is imported
+  lazily). The LLM prompt forbids mentioning anything absent from the input, and the output is
+  checked with `verify_numbers` before it is shown (template fallback on failure).
 - `explain.py`: `explain(match_id, player_id, method) -> Explanation(text, input, provider, verified)`.
   If the provider's text fails `verify_numbers`, fall back to the template text and set
   `verified=False`; the template text itself always verifies.
