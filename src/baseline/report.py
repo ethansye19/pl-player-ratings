@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from src.baseline.rate import PROCESSED_DIR, RAW_FILE, STATS_FILE
+import src.baseline.weights as weights_module
 from src.baseline.weights import LABELS, STATS, WEIGHTS, stat_definitions, weight_of
 from src.contract import MIN_MINUTES, POSITION_GROUPS
 
@@ -58,6 +59,22 @@ def contributions(row: pd.Series, group: str, k: int = 3) -> str:
     return "; ".join(f"{LABELS[s]} {_fmt_count(c)} x {w:g} = {v:+.2f}" for s, c, w, v in items[:k])
 
 
+def docstring_section(title: str) -> list[str]:
+    """Body of a titled section of the weights docstring (up to the next underlined title)."""
+    doc = weights_module.__doc__ or ""
+    marker = title + "\n" + "-" * len(title) + "\n"
+    if marker not in doc:
+        return []
+    body = doc.split(marker, 1)[1]
+    lines = []
+    for line in body.splitlines():
+        if line and set(line) == {"-"}:
+            lines.pop()  # the next section's title line
+            break
+        lines.append(line)
+    return [" ".join(l.strip() for l in lines).strip()]
+
+
 def stat_table() -> list[str]:
     definitions = stat_definitions()
     lines = [
@@ -98,6 +115,29 @@ def distribution_section(df: pd.DataFrame) -> list[str]:
             f"{_fmt(q[0.25])} | {_fmt(q[0.5])} | {_fmt(q[0.75])} | {_fmt(q[0.95])} | {_fmt(q[0.99])} | {_fmt(s.max())} | "
             f"{100 * (s == 0).mean():.2f}% | {100 * (s <= 0).mean():.1f}% |"
         )
+    lines += ["", "Share of each group's raw-score variance explained by the team-context stats (variance of the summed",
+              "goals_conceded + xg_faced + clean_sheet contributions over the variance of raw_score):", ""]
+    lines += ["| group | team-context variance share |", "|---|---:|"]
+    for group in POSITION_GROUPS:
+        part = df[df["position_group"] == group]
+        context = sum(part[s] * weight_of(group, s) for s in ("goals_conceded", "xg_faced", "clean_sheet"))
+        share = context.var() / part["raw_score"].var() if part["raw_score"].var() > 0 else float("nan")
+        lines.append(f"| {group} | {100 * share:.1f}% |")
+    before = PROCESSED_DIR / "before" / "raw_baseline.parquet"
+    if before.exists():
+        old = pd.read_parquet(before)[["match_id", "player_id", "position_group", "raw_score"]].rename(columns={"raw_score": "before"})
+        both = df[["match_id", "player_id", "position_group", "raw_score"]].merge(old, on=["match_id", "player_id", "position_group"])
+        lines += ["", f"Before vs after the Step 4 weight decisions (`before` = frozen snapshot in `{before.as_posix().split('processed/')[-1]}`):", "",
+                  "| group | n | mean before | mean after | sd before | sd after | min before | min after | max before | max after | zeros before | zeros after | Spearman before/after |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        for group in POSITION_GROUPS:
+            b = both[both["position_group"] == group]
+            rho = b["before"].corr(b["raw_score"], method="spearman")
+            lines.append(
+                f"| {group} | {len(b)} | {_fmt(b['before'].mean())} | {_fmt(b['raw_score'].mean())} | {_fmt(b['before'].std())} | {_fmt(b['raw_score'].std())} | "
+                f"{_fmt(b['before'].min())} | {_fmt(b['raw_score'].min())} | {_fmt(b['before'].max())} | {_fmt(b['raw_score'].max())} | "
+                f"{100 * (b['before'] == 0).mean():.2f}% | {100 * (b['raw_score'] == 0).mean():.2f}% | {rho:.3f} |"
+            )
     lines += ["", "Where low-activity players land (median raw score of each minutes bucket and its percentile rank within the group):", ""]
     header = "| group | " + " | ".join(BUCKET_LABELS) + " | quiet 85+ min starters* | corr(raw, minutes) |"
     lines += [header, "|---|" + "---:|" * (len(BUCKET_LABELS) + 2)]
@@ -167,14 +207,19 @@ def build_report(processed_dir: pathlib.Path = PROCESSED_DIR) -> str:
         "",
         *stat_table(),
         "",
+        "### Retired stat",
+        "",
+        *docstring_section("Retired stat"),
+        "",
         "### How low activity is treated",
         "",
         "The raw score has no minutes term: a player with no notable events scores exactly 0. Routine volume (passes,",
         "pressures, recoveries, carries) earns little while every misplaced pass, lost duel, lost possession and goal",
-        "conceded while on the pitch costs something, so a 15-minute substitute with nothing to show sits at ~0 in the",
-        "lower-middle of the group rather than at the bottom, and a quiet full-match starter lands a little above the",
-        "middle. The bottom of each group is reserved for red cards, own goals, errors, penalties conceded and heavy",
-        "defeats (see section 2 for the measured positions and section 4 for the lowest scores).",
+        "conceded while on the pitch costs something, so a 15-minute substitute with nothing to show sits at ~0, below",
+        "the quiet full-match starters (who land a little above the middle) but above everyone with a clearly negative",
+        "game. The bottom of each group is reserved for red cards, own goals, errors, penalties conceded and heavy",
+        "defeats (see section 2 for the measured positions, including before/after the Step 4 decisions, and section 4",
+        "for the lowest scores).",
         "",
         "## 2. Raw-score distribution per position group",
         "",

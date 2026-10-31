@@ -9,11 +9,13 @@ Stat definitions (columns of ``data/processed/events.parquet``, statsbombpy nami
 row per player who appeared, counted over that player's events in that match only)
 -----------------------------------------------------------------------------------
 Attacking
-  goals               ``type == "Shot"`` and ``shot_outcome == "Goal"`` (penalties included; own goals are not shots).
+  goals               ``type == "Shot"``, ``shot_outcome == "Goal"`` and ``shot_type != "Penalty"`` (non-penalty goals; own goals are not shots).
+  penalties_scored    ``type == "Shot"``, ``shot_type == "Penalty"`` and ``shot_outcome == "Goal"``.
   assists             ``type == "Pass"`` and ``pass_goal_assist``.
   xg                  sum of ``shot_statsbomb_xg`` over the player's shots with ``shot_type != "Penalty"`` (non-penalty xG).
   shots_on_target     ``type == "Shot"`` and ``shot_outcome in ("Goal", "Saved", "Saved to Post")``.
-  key_passes          ``type == "Pass"`` and (``pass_shot_assist`` or ``pass_goal_assist``): passes that led directly to a shot, assists included.
+  key_passes          ``type == "Pass"`` and ``pass_shot_assist`` and not ``pass_goal_assist``: passes that led directly to a shot that
+                      was not scored (assists are counted separately).
   dribbles_completed  ``type == "Dribble"`` and ``dribble_outcome == "Complete"``.
   progressive_carries ``type == "Carry"`` starting outside the own defensive 40% (``location_x >= 48``) and moving the ball
                       at least 10 yards towards the opponent's goal (``carry_end_x - location_x >= 10``).
@@ -40,7 +42,6 @@ Defending
   pressures           ``type == "Pressure"``.
 Discipline and errors
   fouls_committed     ``type == "Foul Committed"``.
-  fouls_won           ``type == "Foul Won"``.
   yellow_cards        ``foul_committed_card == "Yellow Card"`` or ``bad_behaviour_card == "Yellow Card"``.
   red_cards           ``foul_committed_card`` or ``bad_behaviour_card`` in ("Red Card", "Second Yellow").
   errors              ``type == "Error"`` (StatsBomb: a mistake that leads directly to a shot).
@@ -59,17 +60,29 @@ Goalkeeping (``type == "Goal Keeper"``)
                       Collected/Success, Collected/Collected Twice, Punch/Punched out, Punch/In Play Safe,
                       Keeper Sweeper/Claim, Keeper Sweeper/Clear, Smother/Success In Play, Smother/Won.
 
+Retired stat
+------------
+``fouls_won`` (``type == "Foul Won"``, weight 0.10 in DEF/MID/FWD) was retired when ``penalties_scored`` was added, because
+``tests/test_baseline.py`` caps STATS at 35. Measured on the pre-change season outputs it had the smallest share of the
+raw-score variance of any stat kept in play: 0.14% (DEF), 0.25% (MID), 0.25% (FWD); the Spearman correlation of each
+group's raw scores with and without it was 0.9991 / 0.9980 / 0.9971. ``penalties_missed`` scored lower still (0.02% /
+0.13% / 0.24%) but stays as the counterpart of ``penalties_scored`` and maps to an FPL field; ``pressures`` was the next
+candidate (0.15% / 0.32% / 0.20%). Nothing from ``fouls_won`` was folded into another stat.
+
 How low activity is treated
 ---------------------------
 The raw score is a pure weighted sum with no minutes term, so a player with no notable
 events scores exactly 0. The weights are set so that routine volume (passes, pressures,
 recoveries, carries) earns only a little, while every misplaced pass, lost duel, lost
 possession and goal conceded while on the pitch costs something. Measured on 2015/16
-(``reports/baseline.md``, section 2): a 10-20 minute substitute's median raw score sits at
-the 27th-30th percentile of the outfield groups (lower-middle, not the bottom), a quiet
-full-match starter (no goals, assists, cards, errors, own goals or penalties conceded) at
-the 55th-61st, and 16-26% of each group's appearances score at or below 0. Below the
-quiet players come those charged with goals conceded, errors, cards, own goals or conceded
+(``reports/baseline.md``, section 2) after the Step 4 weight decisions: a 10-20 minute
+substitute's median raw score sits at the 15th (DEF), 21st (MID) and 22nd (FWD) percentile
+of its group, a quiet full-match starter (no goals, assists, cards, errors, own goals or
+penalties conceded) at the 56th-63rd, and 12-17% of each outfield group's appearances
+score at or below 0. Before those decisions the substitutes sat at the 27th-30th
+percentile: halving the DEF/MID team-context weights means fewer starters in beaten
+teams go negative, so quiet substitutes rank lower relative to them. Below the quiet
+players come those charged with goals conceded, errors, cards, own goals or conceded
 penalties, which are the main ways to go clearly negative. Players under 10 minutes still
 get a raw score; the scale module drops them.
 
@@ -97,6 +110,7 @@ from src.contract import POSITION_GROUPS
 STATS: list[str] = [
     # attacking
     "goals",
+    "penalties_scored",
     "assists",
     "xg",
     "shots_on_target",
@@ -122,7 +136,6 @@ STATS: list[str] = [
     "pressures",
     # discipline and errors
     "fouls_committed",
-    "fouls_won",
     "yellow_cards",
     "red_cards",
     "errors",
@@ -143,7 +156,8 @@ FLOAT_STATS: tuple[str, ...] = ("xg", "xg_faced")
 
 # Short fan-facing labels for the explanation feature and the reports.
 LABELS: dict[str, str] = {
-    "goals": "goals",
+    "goals": "non-penalty goals",
+    "penalties_scored": "penalties scored",
     "assists": "assists",
     "xg": "non-penalty xG",
     "shots_on_target": "shots on target",
@@ -166,7 +180,6 @@ LABELS: dict[str, str] = {
     "aerials_lost": "aerial duels lost",
     "pressures": "pressures",
     "fouls_committed": "fouls committed",
-    "fouls_won": "fouls won",
     "yellow_cards": "yellow cards",
     "red_cards": "red cards",
     "errors": "errors leading to a shot",
@@ -217,20 +230,22 @@ _GK: dict[str, Weight] = {
     "clearances": _w(0.10, "Clearing danger from the box"),
     "aerials_won": _w(0.20, "Winning aerial duels under crosses is part of commanding the box"),
     "aerials_lost": _w(-0.30, "A keeper losing an aerial duel usually leaves an open goal"),
-    "goals": _w(4.00, "A goalkeeper goal is extraordinary and match-defining"),
+    "goals": _w(4.00, "A goalkeeper goal (from open play or a set piece) is extraordinary and match-defining"),
+    "penalties_scored": _w(1.25, "A converted penalty is a goal but the chance was already 0.78 xG, so it earns less than a goal"),
     "assists": _w(2.00, "A keeper assist (usually a long kick) directly creates a goal"),
-    "key_passes": _w(0.30, "A pass that leads straight to a shot"),
+    "key_passes": _w(0.30, "A pass that leads straight to a shot that was not scored; assists are credited separately"),
     "shots_on_target": _w(0.30, "A keeper shot on target is a rare attacking contribution"),
     "xg": _w(1.00, "Chance quality of any shots taken"),
 }
 
 # ----------------------------------------------------------------------------- DEF
 _DEF: dict[str, Weight] = {
-    "goals": _w(3.50, "A goal from a defender is rare and usually decides the match"),
+    "goals": _w(3.50, "A non-penalty goal from a defender is rare and usually decides the match"),
+    "penalties_scored": _w(1.25, "A converted penalty is a goal but the chance was already 0.78 xG, so it earns less than a goal"),
     "assists": _w(2.00, "An assist directly creates a goal"),
     "xg": _w(1.00, "Getting into scoring positions (set pieces) is rewarded even without a goal"),
     "shots_on_target": _w(0.30, "Testing the keeper from a set piece or a late run"),
-    "key_passes": _w(0.40, "Creating a shot, typically a cross or a cut-back from a full-back"),
+    "key_passes": _w(0.40, "Creating an unconverted shot, typically a cross or a cut-back; assists are credited separately"),
     "dribbles_completed": _w(0.20, "Beating a man to progress play"),
     "progressive_carries": _w(0.12, "Carrying the ball out of defence moves the team up the pitch"),
     "penalties_won": _w(1.50, "Winning a penalty creates a 0.78 xG chance"),
@@ -249,24 +264,24 @@ _DEF: dict[str, Weight] = {
     "aerials_lost": _w(-0.15, "Losing aerial duels lets attackers win first contact"),
     "pressures": _w(0.015, "Pressing work rate; small weight because pressures are frequent"),
     "fouls_committed": _w(-0.15, "Fouls give away free kicks in dangerous areas"),
-    "fouls_won": _w(0.10, "Drawing fouls relieves pressure"),
     "yellow_cards": _w(-0.50, "A booking is a discipline lapse and risks a sending-off"),
     "red_cards": _w(-3.00, "A sending-off leaves the team a man down; one of the worst individual outcomes"),
     "errors": _w(-1.50, "An error leading to a shot is a defender's clearest mistake"),
     "own_goals": _w(-3.00, "An own goal is a goal for the opponent credited to the player"),
     "penalties_conceded": _w(-2.00, "Conceding a penalty gifts the opponent a 0.78 xG chance"),
-    "goals_conceded": _w(-0.80, "Defenders share responsibility for every goal conceded while on the pitch"),
-    "clean_sheet": _w(1.00, "Keeping a clean sheet (60+ minutes) is the defender's headline achievement"),
-    "xg_faced": _w(-0.40, "Allowing many good chances is poor defending even when the keeper bails you out"),
+    "goals_conceded": _w(-0.40, "Defenders share responsibility for goals conceded while on the pitch (halved after validation: team context dominated)"),
+    "clean_sheet": _w(0.50, "Keeping a clean sheet (60+ minutes) is the defender's headline achievement (halved after validation)"),
+    "xg_faced": _w(-0.20, "Allowing many good chances is poor defending even when the keeper bails you out (halved after validation)"),
 }
 
 # ----------------------------------------------------------------------------- MID
 _MID: dict[str, Weight] = {
-    "goals": _w(3.00, "Goals decide matches; a midfield goal is a major contribution"),
+    "goals": _w(3.00, "Non-penalty goals decide matches; a midfield goal is a major contribution"),
+    "penalties_scored": _w(1.25, "A converted penalty is a goal but the chance was already 0.78 xG, so it earns less than a goal"),
     "assists": _w(2.00, "An assist directly creates a goal"),
     "xg": _w(1.50, "Getting into scoring positions is rewarded even without a goal"),
     "shots_on_target": _w(0.40, "Shots that test the keeper"),
-    "key_passes": _w(0.50, "Chance creation is a midfielder's main attacking output"),
+    "key_passes": _w(0.50, "Chance creation is a midfielder's main attacking output; assists are credited separately"),
     "dribbles_completed": _w(0.25, "Beating a man in midfield opens up the pitch"),
     "progressive_carries": _w(0.12, "Carrying the ball forward through the lines"),
     "penalties_won": _w(1.50, "Winning a penalty creates a 0.78 xG chance"),
@@ -285,24 +300,24 @@ _MID: dict[str, Weight] = {
     "aerials_lost": _w(-0.10, "Losing aerial duels concedes second balls"),
     "pressures": _w(0.015, "Pressing work rate; frequent, so a small weight"),
     "fouls_committed": _w(-0.15, "Fouls give away free kicks and risk cards"),
-    "fouls_won": _w(0.10, "Drawing fouls wins territory and relieves pressure"),
     "yellow_cards": _w(-0.50, "A booking is a discipline lapse and risks a sending-off"),
     "red_cards": _w(-3.00, "A sending-off leaves the team a man down; one of the worst individual outcomes"),
     "errors": _w(-1.50, "An error leading to a shot is a clear individual mistake"),
     "own_goals": _w(-3.00, "An own goal is a goal for the opponent credited to the player"),
     "penalties_conceded": _w(-2.00, "Conceding a penalty gifts the opponent a 0.78 xG chance"),
-    "goals_conceded": _w(-0.60, "Midfielders share responsibility for goals conceded while on the pitch, less than defenders"),
-    "clean_sheet": _w(0.50, "A clean sheet reflects the midfield's defensive shield"),
-    "xg_faced": _w(-0.20, "A share of responsibility for the chances the team allows"),
+    "goals_conceded": _w(-0.30, "Midfielders share some responsibility for goals conceded while on the pitch (halved after validation)"),
+    "clean_sheet": _w(0.25, "A clean sheet reflects the midfield's defensive shield (halved after validation)"),
+    "xg_faced": _w(-0.10, "A small share of responsibility for the chances the team allows (halved after validation)"),
 }
 
 # ----------------------------------------------------------------------------- FWD
 _FWD: dict[str, Weight] = {
-    "goals": _w(3.00, "Scoring is the forward's job and decides matches"),
+    "goals": _w(3.00, "Scoring from open play or set pieces is the forward's job and decides matches"),
+    "penalties_scored": _w(1.25, "A converted penalty is a goal but the chance was already 0.78 xG, so it earns less than a goal"),
     "assists": _w(1.80, "An assist directly creates a goal"),
     "xg": _w(1.50, "Getting into high-quality shooting positions is rewarded even without a goal"),
     "shots_on_target": _w(0.40, "Shots that test the keeper show finishing quality"),
-    "key_passes": _w(0.40, "Creating chances for teammates"),
+    "key_passes": _w(0.40, "Creating unconverted chances for teammates; assists are credited separately"),
     "dribbles_completed": _w(0.30, "Beating defenders one-on-one is a forward's trademark"),
     "progressive_carries": _w(0.12, "Carrying the ball at the defence"),
     "penalties_won": _w(1.50, "Winning a penalty creates a 0.78 xG chance"),
@@ -310,18 +325,17 @@ _FWD: dict[str, Weight] = {
     "passes_completed": _w(0.01, "Link-up passing earns a little; forwards are not rated on pass volume"),
     "passes_incomplete": _w(-0.05, "Giveaways in the final third are cheap but still turnovers"),
     "progressive_passes": _w(0.08, "Forward passing that moves the attack on"),
-    "possession_lost": _w(-0.20, "Being dispossessed or miscontrolling up front is common but still a turnover"),
+    "possession_lost": _w(-0.15, "Being dispossessed or miscontrolling up front is common and only mildly costly (eased after validation)"),
     "tackles_won": _w(0.20, "Winning the ball high up the pitch"),
     "dribbled_past": _w(-0.10, "A forward beaten by a dribble is a minor defensive lapse"),
     "interceptions": _w(0.15, "Cutting out passes high up the pitch"),
     "clearances": _w(0.05, "Helping out at defensive set pieces"),
     "blocks": _w(0.10, "Blocking passes and shots while pressing"),
     "ball_recoveries": _w(0.05, "Winning loose balls to sustain attacks"),
-    "aerials_won": _w(0.15, "Winning headers holds the ball up and threatens goal"),
-    "aerials_lost": _w(-0.10, "Losing aerial duels up front gives the ball straight back"),
+    "aerials_won": _w(0.20, "Winning headers holds the ball up and threatens goal (raised after validation)"),
+    "aerials_lost": _w(-0.05, "Losing an aerial duel up front is a minor negative (eased after validation: target men were punished)"),
     "pressures": _w(0.015, "Pressing from the front; frequent, so a small weight"),
     "fouls_committed": _w(-0.15, "Fouls break up the team's own attacks and risk cards"),
-    "fouls_won": _w(0.10, "Drawing fouls earns free kicks in dangerous areas"),
     "yellow_cards": _w(-0.50, "A booking is a discipline lapse and risks a sending-off"),
     "red_cards": _w(-3.00, "A sending-off leaves the team a man down; one of the worst individual outcomes"),
     "errors": _w(-1.50, "An error leading to a shot is a clear individual mistake"),

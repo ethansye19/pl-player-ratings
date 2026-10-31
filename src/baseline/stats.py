@@ -125,10 +125,11 @@ def _player_event_stats(events: pd.DataFrame) -> pd.DataFrame:
     forward_carry = pe["carry_end_x"] - pe["location_x"]
 
     flags = {
-        "goals": goal,
+        "goals": goal & ~penalty,
+        "penalties_scored": penalty & goal,
         "assists": is_pass & _flag(pe["pass_goal_assist"]),
         "shots_on_target": is_shot & pe["shot_outcome"].isin(ON_TARGET_OUTCOMES),
-        "key_passes": is_pass & (_flag(pe["pass_shot_assist"]) | _flag(pe["pass_goal_assist"])),
+        "key_passes": is_pass & _flag(pe["pass_shot_assist"]) & ~_flag(pe["pass_goal_assist"]),
         "dribbles_completed": typ.eq("Dribble") & pe["dribble_outcome"].eq("Complete"),
         "progressive_carries": typ.eq("Carry")
         & (pe["location_x"] >= DEFENSIVE_40_X)
@@ -152,7 +153,6 @@ def _player_event_stats(events: pd.DataFrame) -> pd.DataFrame:
         "aerials_lost": is_duel & pe["duel_type"].eq("Aerial Lost"),
         "pressures": typ.eq("Pressure"),
         "fouls_committed": typ.eq("Foul Committed"),
-        "fouls_won": typ.eq("Foul Won"),
         "yellow_cards": foul_card.eq("Yellow Card") | behaviour_card.eq("Yellow Card"),
         "red_cards": foul_card.isin(RED_CARD_VALUES) | behaviour_card.isin(RED_CARD_VALUES),
         "errors": typ.eq("Error"),
