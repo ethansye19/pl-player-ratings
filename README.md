@@ -10,9 +10,10 @@ rare), built two ways and compared:
 Plus a match-ratings web page, a grounded "why this rating?" explanation feature, and a
 current-season gameweek pipeline.
 
-> **Status:** Step 2 (ingestion) complete. Rating methods, scaling, web page,
-> explanations and the current-season pipeline are not implemented yet; their tests
-> fail by design. See `CLAUDE.md` for the working contract.
+> **Status:** Steps 1–3 complete: ingestion, both rating methods, the scaler and the
+> web page are built and rated for 2015/16. The explanation feature (Step 5) and the
+> current-season pipeline (Step 6) are not implemented yet; their tests fail by design.
+> See `CLAUDE.md` for the working contract and `reports/` for the build reports.
 
 ## Setup
 
@@ -50,6 +51,30 @@ Build summary (full details in `reports/ingest.md`):
 | SPADL actions | 757,641 |
 | players who appeared | 550 |
 | player-match appearances | 10,469 |
+
+## Step 3: rate the season and view it
+
+```powershell
+.venv\Scripts\python -m src.baseline.rate                 # baseline stats + raw scores (~15 s)
+.venv\Scripts\python -m src.vaep.train                    # VAEP features, 6 models, action values, raw scores (~6 min)
+.venv\Scripts\python -m src.scale.apply --method baseline # raw -> 3.0-10.0 ratings
+.venv\Scripts\python -m src.scale.apply --method vaep
+.venv\Scripts\python -m src.pipeline.export_web           # web/data/ for the page
+.venv\Scripts\python -m http.server 8810 --directory web  # then open http://localhost:8810
+```
+
+- **Baseline** (`src/baseline/`): 35 per-match stats from the event data, weighted per
+  position group (`weights.py` has every weight with a one-line justification);
+  `raw_score` is the weighted sum. Report: `reports/baseline.md`.
+- **VAEP** (`src/vaep/`): socceraction VAEP with lightgbm. A chronological holdout
+  (train matchweeks 1–19, score 20–38) plus 5-fold cross-fitting so no match is scored by
+  a model trained on it; `raw_score` is the sum of a player's action values in the match.
+  Report: `reports/vaep_splits.md`.
+- **Scale** (`src/scale/`): per-position-group percentile of the raw score mapped through
+  a fixed target curve (mean 6.5, 10.0 only above the 99.96th percentile), frozen as JSON
+  so a single match can be rated without touching other matches. Report: `reports/scale.md`.
+- **Web** (`web/`): static page, pick a match, both lineups on a pitch with colour-coded
+  ratings (red < 6, orange 6–6.9, green 7–7.9, blue 8+), Baseline/VAEP toggle.
 
 ## Data credits
 
