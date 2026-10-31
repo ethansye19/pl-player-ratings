@@ -127,13 +127,15 @@ Two kinds of code exist:
 Raw JSON is downloaded once into `data/raw/statsbomb/` mirroring the open-data repo
 layout (`matches/2/27.json`, `events/<match_id>.json`, `lineups/<match_id>.json`) so
 that `socceraction.data.statsbomb.StatsBombLoader(getter="local", root=...)` can read it.
+`data/raw/statsbomb/MANIFEST.json` records the upstream commit and download time;
+`reports/ingest.md` records the build summary, the minutes cross-check and anomalies.
 
 | file | required columns |
 |------|------------------|
-| `matches.parquet` | `match_id, match_date (YYYY-MM-DD), kick_off, match_week, home_team_id, home_team, away_team_id, away_team, home_score, away_score` |
+| `matches.parquet` | `match_id, match_date (YYYY-MM-DD), kick_off, match_week, home_team_id, home_team, away_team_id, away_team, home_score, away_score, home_formation, away_formation, stadium, referee` |
 | `teams.parquet` | `team_id, team_name` |
-| `players.parquet` | `player_id, player_name` |
-| `lineups.parquet` | one row per **player who appeared** (`minutes > 0`): `match_id, team_id, team, player_id, player_name, jersey_number, is_starter (bool), position_id, position, position_group, minutes, minute_on, minute_off` |
+| `players.parquet` | `player_id, player_name, player_full_name, appearances` (`player_name` is StatsBomb's nickname when present, else the full name; the same rule is used everywhere) |
+| `lineups.parquet` | one row per **player who appeared** (`minutes > 0`): `match_id, team_id, team, player_id, player_name, player_full_name, jersey_number, is_starter (bool), starting_position_id, position_id, position, position_group, minutes, minute_on, minute_off, red_card_minute (null unless sent off)` |
 | `events.parquet` | all 380 matches, statsbombpy-style flattened events (`sb.events()` naming) plus `match_id`; coordinate lists split into `location_x, location_y`, `pass_end_x, pass_end_y`, `carry_end_x, carry_end_y`, `shot_end_x, shot_end_y, shot_end_z`, `goalkeeper_end_x, goalkeeper_end_y`; dict-valued columns dropped (`tactics`, `shot_freeze_frame`) |
 | `actions.parquet` | SPADL actions from `socceraction.spadl.statsbomb.convert_to_actions`, socceraction's native names (`game_id, original_event_id, action_id, period_id, time_seconds, team_id, player_id, start_x, start_y, end_x, end_y, type_id, result_id, bodypart_id`) plus `type_name, result_name, bodypart_name` |
 
@@ -157,7 +159,7 @@ Written by later steps (same folder):
 | GK  | 1 Goalkeeper |
 | DEF | 2 Right Back, 3 Right Center Back, 4 Center Back, 5 Left Center Back, 6 Left Back, 7 Right Wing Back, 8 Left Wing Back |
 | MID | 9 Right Defensive Midfield, 10 Center Defensive Midfield, 11 Left Defensive Midfield, 12 Right Midfield, 13 Right Center Midfield, 14 Center Midfield, 15 Left Center Midfield, 16 Left Midfield, 18 Right Attacking Midfield, 19 Center Attacking Midfield, 20 Left Attacking Midfield |
-| FWD | 17 Right Wing, 21 Left Wing, 22 Right Center Forward, 23 Striker, 24 Left Center Forward, 25 Secondary Striker |
+| FWD | 17 Right Wing, 21 Left Wing, 22 Right Center Forward, 23 Center Forward, 24 Left Center Forward, 25 Secondary Striker |
 
 A player's `position_group` for a match is the group of the position in which they
 spent the **most minutes in that match** (from the lineup `positions` intervals).
@@ -166,13 +168,18 @@ Wingers are forwards; attacking midfielders are midfielders. Keep this table in
 
 ### Minutes
 
-`minutes` = total time on the pitch, including stoppage time, from the lineup
-`positions` intervals (`from`/`to`, with `to = null` meaning until the end of the
-match). Period end times come from the `Half End` events. Watch the clocks: lineup
-timestamps run on the match clock (second half starts at 45:00) while event timestamps
-restart at 00:00 each period. A sent-off player's time stops at the card. Cross-check
-against socceraction's `minutes_played` and document any systematic difference.
-Rounded to 1 decimal. Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
+`minutes` = total time on the pitch including stoppage time, derived from the **events**:
+`Starting XI` (on at kick-off), `Substitution` (one off, the replacement on),
+`Player Off` / `Player On` (treatment breaks; `permanent` means no return) and a Red Card
+or Second Yellow (off for good). Period lengths come from the `Half End` timestamps.
+The lineup file's `positions` intervals are used only to pick the position a player
+spent the most time in (clipped to the on-pitch spans): they do not stop at a dismissal,
+and near half-time substitutions the last interval often runs to the final whistle.
+`reports/ingest.md` lists every such correction (65 in 2015/16) and a cross-check
+against socceraction's `minutes_played`, which is whole-minute, counts a half-time
+substitution as 45 minutes and overwrites substitutes who later go off; ours is the
+reference. Rounded to 1 decimal (minimum 0.1 for anyone who stepped on the pitch).
+Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
 
 ## Module APIs (build against these; they are what the tests import)
 
