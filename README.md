@@ -70,6 +70,12 @@ Build summary (full details in `reports/ingest.md`):
   (train matchweeks 1–19, score 20–38) plus 5-fold cross-fitting so no match is scored by
   a model trained on it; `raw_score` is the sum of a player's action values in the match.
   Report: `reports/vaep_splits.md`.
+  **Caveat:** VAEP values on-the-ball actions by how much they change the chance of a
+  goal, so it undervalues defensive work. Clearances, aerial duels, blocks, clean sheets
+  and goals conceded carry little or no value, a defender's own goal or red card costs
+  almost nothing, and goalkeepers are rated by their carries and passes rather than their
+  saves. The web page therefore shows goalkeepers' baseline ratings in VAEP mode, and
+  VAEP ratings for defenders should be read as attacking contribution.
 - **Scale** (`src/scale/`): per-position-group percentile of the raw score mapped through
   a fixed target curve (mean 6.5, 10.0 only above the 99.96th percentile), frozen as JSON
   so a single match can be rated without touching other matches. Report: `reports/scale.md`.
