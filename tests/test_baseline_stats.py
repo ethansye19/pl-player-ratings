@@ -50,7 +50,8 @@ def synthetic_events(match_id: int = 1) -> pd.DataFrame:
         _event(match_id, team_id=HOME, type="Half Start"),
         # away MID: completed progressive key pass at 10:00, then away DEF scores (xG 0.3)
         _event(match_id, team_id=AWAY, player_id=203, type="Pass", timestamp="00:10:00.000",
-               location_x=50.0, pass_end_x=70.0, pass_shot_assist=True),
+               location_x=50.0, pass_end_x=70.0, pass_goal_assist=True),
+        _event(match_id, team_id=AWAY, player_id=203, type="Pass", timestamp="00:11:00.000", pass_shot_assist=True),
         _event(match_id, team_id=AWAY, player_id=202, type="Shot", timestamp="00:10:05.000",
                shot_outcome="Goal", shot_type="Open Play", shot_statsbomb_xg=0.3),
         # home DEF: one incomplete pass, one completed aerial pass, one tackle won, a failed interception
@@ -85,6 +86,9 @@ def synthetic_events(match_id: int = 1) -> pd.DataFrame:
                goalkeeper_type="Shot Saved", goalkeeper_outcome="Success"),
         _event(match_id, team_id=HOME, player_id=103, type="Shot", period=2, timestamp="00:40:00.000",
                shot_outcome="Off T", shot_type="Penalty", shot_statsbomb_xg=0.7835),
+        # ... and scores one at 88.0 abs: penalties_scored, not goals
+        _event(match_id, team_id=HOME, player_id=103, type="Shot", period=2, timestamp="00:42:00.000",
+               shot_outcome="Goal", shot_type="Penalty", shot_statsbomb_xg=0.7835),
         _event(match_id, team_id=HOME, type="Half End", period=2, timestamp="00:49:00.000"),
         _event(match_id, team_id=AWAY, type="Half End", period=2, timestamp="00:49:00.000"),
     ]
@@ -125,9 +129,11 @@ def test_stats_table_shape_and_dtypes(synthetic_stats):
 def test_attacking_and_possession_definitions(synthetic_stats):
     s = synthetic_stats
     assert s.loc[202, "goals"] == 1 and s.loc[202, "shots_on_target"] == 1 and s.loc[202, "xg"] == pytest.approx(0.3)
-    assert s.loc[203, "key_passes"] == 1 and s.loc[203, "progressive_passes"] == 1 and s.loc[203, "passes_completed"] == 1
+    assert s.loc[203, "assists"] == 1 and s.loc[203, "key_passes"] == 1, "an assist is not also a key pass"
+    assert s.loc[203, "progressive_passes"] == 1 and s.loc[203, "passes_completed"] == 2
     assert s.loc[203, "progressive_carries"] == 1
-    assert s.loc[103, "shots_on_target"] == 1 and s.loc[103, "penalties_missed"] == 1
+    assert s.loc[103, "shots_on_target"] == 2 and s.loc[103, "penalties_missed"] == 1
+    assert s.loc[103, "penalties_scored"] == 1 and s.loc[103, "goals"] == 0, "a scored penalty is not a (non-penalty) goal"
     assert s.loc[103, "xg"] == pytest.approx(0.2), "penalty xG is excluded from xg"
     assert s.loc[102, "passes_completed"] == 1 and s.loc[102, "passes_incomplete"] == 1
     assert s.loc[101, "passes_completed"] == 0 and s.loc[101, "passes_incomplete"] == 0, "injury clearances are ignored"
@@ -148,9 +154,10 @@ def test_team_context_counts_only_while_on_the_pitch(synthetic_stats):
     s = synthetic_stats
     # home conceded at 10:05 (before the 70th-minute sub came on); away conceded the own goal at 20:00
     assert s.loc[101, "goals_conceded"] == 1 and s.loc[102, "goals_conceded"] == 1 and s.loc[103, "goals_conceded"] == 0
-    assert s.loc[201, "goals_conceded"] == 1 and s.loc[202, "goals_conceded"] == 1 and s.loc[203, "goals_conceded"] == 1
+    # away conceded the own goal at 20:00 and the penalty at 88.0 (after 202 went off at 50.0)
+    assert s.loc[201, "goals_conceded"] == 2 and s.loc[202, "goals_conceded"] == 1 and s.loc[203, "goals_conceded"] == 2
     # xG faced: away DEF left at 50.0, before both home shots (76.0 and 86.0); penalties count
-    assert s.loc[201, "xg_faced"] == pytest.approx(0.2 + 0.7835)
+    assert s.loc[201, "xg_faced"] == pytest.approx(0.2 + 0.7835 + 0.7835)
     assert s.loc[202, "xg_faced"] == pytest.approx(0.0)
     assert s.loc[101, "xg_faced"] == pytest.approx(0.3) and s.loc[103, "xg_faced"] == pytest.approx(0.0)
     assert (s["clean_sheet"] == 0).all()
@@ -210,10 +217,11 @@ def test_group_profiles_are_position_specific():
     STATS, WEIGHTS, LABELS = import_or_fail("src.baseline.weights", "STATS", "WEIGHTS", "LABELS")
     assert set(LABELS) == set(STATS)
     assert {"saves", "penalties_saved", "keeper_claims"} <= set(WEIGHTS["GK"])
+    assert "fouls_won" not in STATS and "penalties_scored" in STATS
     for group in ("DEF", "MID", "FWD"):
         assert "saves" not in WEIGHTS[group]
     for group in POSITION_GROUPS:
-        assert WEIGHTS[group]["goals"].weight > 0 and WEIGHTS[group]["red_cards"].weight < 0
+        assert WEIGHTS[group]["goals"].weight > WEIGHTS[group]["penalties_scored"].weight > 0 and WEIGHTS[group]["red_cards"].weight < 0
         assert WEIGHTS[group]["own_goals"].weight < 0 and WEIGHTS[group]["errors"].weight < 0
     assert WEIGHTS["GK"]["goals_conceded"].weight < WEIGHTS["DEF"]["goals_conceded"].weight < WEIGHTS["MID"]["goals_conceded"].weight < 0
     assert WEIGHTS["GK"]["xg_faced"].weight > 0 > WEIGHTS["DEF"]["xg_faced"].weight
@@ -228,10 +236,11 @@ def test_goals_and_goals_conceded_reconcile_with_the_match_scores(matches, lineu
         events = events_for([m.match_id])
         lu = lineups[lineups["match_id"] == m.match_id]
         stats = player_match_stats(m.match_id, events, lu).merge(lu[["player_id", "team_id"]], on="player_id")
-        by_team = stats.groupby("team_id")[["goals", "own_goals"]].sum()
+        by_team = stats.groupby("team_id")[["goals", "penalties_scored", "own_goals"]].sum()
         scores = {m.home_team_id: m.home_score, m.away_team_id: m.away_score}
         for team_id, opp_id in ((m.home_team_id, m.away_team_id), (m.away_team_id, m.home_team_id)):
-            assert by_team.loc[team_id, "goals"] + by_team.loc[opp_id, "own_goals"] == scores[team_id], m.match_id
+            scored = by_team.loc[team_id, "goals"] + by_team.loc[team_id, "penalties_scored"]
+            assert scored + by_team.loc[opp_id, "own_goals"] == scores[team_id], m.match_id
             full = stats[(stats["team_id"] == team_id) & (stats["minutes"] >= lu["minutes"].max() - 0.05)]
             assert (full["goals_conceded"] == scores[opp_id]).all(), f"{m.match_id}: full-match players must be charged every goal"
 
@@ -250,8 +259,9 @@ def test_cached_tables_are_complete_consistent_and_sorted(lineups):
     counts = [s for s in STATS if s not in ("xg", "xg_faced")]
     assert (stats[counts] >= 0).all().all() and (stats[["xg", "xg_faced"]] >= 0).all().all()
     assert set(stats["clean_sheet"].unique()) <= {0, 1}
-    assert (stats["goals"] <= stats["shots_on_target"]).all()
+    assert (stats["goals"] + stats["penalties_scored"] <= stats["shots_on_target"]).all()
     assert (stats["penalties_saved"] <= stats["saves"]).all()
     assert (stats.loc[stats["clean_sheet"] == 1, "goals_conceded"] == 0).all()
     assert (stats.loc[stats["clean_sheet"] == 1, "minutes"] >= 60).all()
-    assert stats["goals"].sum() + stats["own_goals"].sum() == 1026, "2015/16 had 1,026 Premier League goals"
+    assert stats["goals"].sum() + stats["penalties_scored"].sum() + stats["own_goals"].sum() == 1026, "2015/16 had 1,026 Premier League goals"
+    assert stats["penalties_scored"].sum() == 74, "74 penalties were converted in 2015/16 (StatsBomb)"
