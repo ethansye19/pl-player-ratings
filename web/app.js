@@ -161,6 +161,17 @@
   function ratingOf(player, method) {
     return player && player.ratings ? toNumber(player.ratings[method]) : null;
   }
+  /* What the page shows for a player under the selected method. VAEP does not rate goalkeepers reliably, so in
+   * VAEP mode a goalkeeper shows his BASELINE rating (null when he has none: shown as unrated). `source` is the
+   * method whose number is displayed; `swapped` is true when that differs from the selected method. */
+  const GK_NOTE = 'Goalkeepers show their baseline rating: VAEP does not value shot-stopping reliably.';
+  function displayed(player, method) {
+    if (method === 'vaep' && player && player.position_group === 'GK') {
+      const rating = ratingOf(player, 'baseline');
+      return { rating: rating, source: 'baseline', swapped: rating !== null };
+    }
+    return { rating: ratingOf(player, method), source: method, swapped: false };
+  }
   function rawScoreOf(player, method) {
     return player && player.raw_scores ? toNumber(player.raw_scores[method]) : null;
   }
@@ -315,8 +326,13 @@
   }
 
   /* ================================================================ rendering */
-  function tooltipFor(player, payload) {
+  function tooltipFor(player, payload, method) {
     const bits = [player.player_name, '#' + player.jersey_number, player.position || positionAbbr(player), fmtMinutes(player.minutes) + ' min'];
+    if (method === 'vaep' && player.position_group === 'GK') {
+      const shown = displayed(player, method);
+      return bits.concat(shown.rating === null ? 'Baseline unrated (VAEP is not used for goalkeepers)'
+        : 'Baseline ' + fmtRating(shown.rating) + ' (shown instead of VAEP for goalkeepers)').join(' \u00b7 ');
+    }
     const ratings = payload.methods.map(function (m) {
       const rating = ratingOf(player, m);
       return methodLabel(m) + ' ' + (rating === null ? 'unrated' : fmtRating(rating));
@@ -324,12 +340,13 @@
     return bits.concat(ratings.join(' / ')).join(' · ');
   }
 
-  function badge(rating, title) {
+  function badge(rating, title, swapped) {
     const band = ratingBand(rating);
-    return h('span', { class: 'badge band-' + band, title: title },
+    return h('span', { class: 'badge band-' + band + (swapped ? ' is-baseline' : ''), title: title },
       rating === null
         ? [h('span', { 'aria-hidden': 'true', text: '–' }), h('span', { class: 'visually-hidden', text: 'unrated' })]
-        : fmtRating(rating));
+        : [fmtRating(rating), swapped ? h('span', { class: 'btag', 'aria-hidden': 'true', text: 'B' }) : null,
+           swapped ? h('span', { class: 'visually-hidden', text: ' (baseline rating)' }) : null]);
   }
 
   function renderHeader(payload) {
@@ -376,16 +393,19 @@
     const layer = clear(ui.markers);
     state.placed.forEach(function (item) {
       const p = item.player;
-      const rating = ratingOf(p, method);
+      const shown = displayed(p, method);
+      const rating = shown.rating;
       layer.appendChild(s('g', {
-        class: 'marker band-' + ratingBand(rating) + ' side-' + p.side,
+        class: 'marker band-' + ratingBand(rating) + ' side-' + p.side + (shown.swapped ? ' is-baseline' : ''),
         transform: 'translate(' + item.x + ' ' + item.y + ')',
         tabindex: '0', role: 'img', 'data-pid': p.player_id,
-        'aria-label': p.player_name + ', ' + (p.position || positionAbbr(p)) + ', ' + methodLabel(method) + ' ' + (rating === null ? 'unrated' : 'rating ' + fmtRating(rating))
+        'aria-label': p.player_name + ', ' + (p.position || positionAbbr(p)) + ', ' + methodLabel(shown.source) + ' ' + (rating === null ? 'unrated' : 'rating ' + fmtRating(rating))
       },
-      s('title', null, tooltipFor(p, payload)),
+      s('title', null, tooltipFor(p, payload, method)),
       s('rect', { class: 'pill', x: -29, y: -17, width: 58, height: 34, rx: 9 }),
       s('text', { class: 'rtext', x: 0, y: 0, dy: '.35em', text: fmtRating(rating) }),
+      shown.swapped ? s('circle', { class: 'btag-bg', cx: 27, cy: -17, r: 10 }) : null,
+      shown.swapped ? s('text', { class: 'btag-text', x: 27, y: -17, dy: '.35em', text: 'B' }) : null,
       s('text', { class: 'pname', x: 0, y: 40, 'data-size': 20, text: shortName(p.player_name) })));
     });
     $$('.marker', layer).forEach(function (marker, i) {
@@ -440,7 +460,7 @@
         const on = toNumber(p.minute_on), off = toNumber(p.minute_off);
         const leftEarly = on !== null && off !== null && off < end - 0.5;
         list.appendChild(h('li', { class: 'sub', 'data-pid': p.player_id },
-          badge(ratingOf(p, method), tooltipFor(p, payload)),
+          badge(displayed(p, method).rating, tooltipFor(p, payload, method), displayed(p, method).swapped),
           h('span', { class: 'who' },
             h('span', { class: 'who-name', title: p.player_name, text: '#' + p.jersey_number + ' ' + shortName(p.player_name) }),
             h('span', { class: 'who-pos', text: positionAbbr(p) + (p.position ? ' · ' + p.position : '') })),
@@ -453,7 +473,7 @@
 
   function compareForTable(method) {
     return function (a, b) {
-      const ra = ratingOf(a, method), rb = ratingOf(b, method);
+      const ra = displayed(a, method).rating, rb = displayed(b, method).rating;     // sort by what is shown
       if (ra !== null && rb !== null) { if (ra !== rb) return rb - ra; }
       else if (ra !== null) return -1;
       else if (rb !== null) return 1;
@@ -468,9 +488,10 @@
     const body = clear(ui.tableBody);
     let rank = 0;
     rows.forEach(function (p) {
-      const rating = ratingOf(p, method);
-      const raw = rawScoreOf(p, method);
-      const title = tooltipFor(p, payload) + (raw === null ? '' : ' · ' + methodLabel(method) + ' raw score ' + raw);
+      const shown = displayed(p, method);
+      const rating = shown.rating;
+      const raw = rawScoreOf(p, shown.source);
+      const title = tooltipFor(p, payload, method) + (raw === null ? '' : ' · ' + methodLabel(shown.source) + ' raw score ' + raw);
       body.appendChild(h('tr', { 'data-pid': p.player_id },
         h('td', { class: 'c-rank', text: rating === null ? '–' : String(++rank) }),
         h('td', { class: 'c-name' },
@@ -481,11 +502,11 @@
         h('td', { class: 'c-team', text: p.team + (p.is_starter ? '' : ' (sub)') }),
         h('td', { class: 'c-pos' }, h('span', { class: 'grp', title: p.position || '', text: p.position_group || '' })),
         h('td', { class: 'c-min', text: fmtMinutes(p.minutes) }),
-        h('td', { class: 'c-rating' }, badge(rating, title))));
+        h('td', { class: 'c-rating' }, badge(rating, title, shown.swapped))));
     });
     const label = methodLabel(method);
     ui.ratingHeader.textContent = 'Rating ↓';
-    ui.sortNote.textContent = 'Sorted by ' + label + ' rating, highest first. Unrated players last.';
+    ui.sortNote.textContent = 'Sorted by ' + label + ' rating, highest first. Unrated players last.' + (method === 'vaep' ? ' Goalkeepers are ranked by their baseline rating.' : '');
     ui.tableCaption.textContent = 'Players in ' + payload.home.team + ' v ' + payload.away.team + ', sorted by ' + label + ' rating';
   }
 
@@ -521,6 +542,8 @@
     renderCredit(payload);
     ui.methodNote.textContent = label + ': ' + (METHOD_BLURBS[state.method] || 'rating method') + '.';
     ui.lineupsTitle.textContent = 'Lineups · ' + label + ' ratings';
+    ui.gkNote.textContent = GK_NOTE;
+    ui.gkNote.hidden = state.method !== 'vaep';
     setHighlight(null);
   }
 
@@ -868,6 +891,7 @@
     ui.ratingHeader = $('#th-rating');
     ui.sortNote = $('#sort-note');
     ui.methodNote = $('#method-note');
+    ui.gkNote = $('#gk-note');
     ui.lineupsTitle = $('#lineups-title');
     ui.credit = $('#credit');
     ui.creditDefault = Array.prototype.slice.call(ui.credit.childNodes).map(function (node) { return node.cloneNode(true); });
