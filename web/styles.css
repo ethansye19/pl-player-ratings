@@ -407,3 +407,15 @@ main { padding-top: 16px; padding-bottom: 32px; }
   .c-rank { width: 1.8rem; }
   .table-scroll { margin: 0; padding: 0; }
 }
+
+/* goalkeepers in VAEP mode show their baseline rating, marked with a small "B" tag and a dashed outline */
+.gk-note { flex: 1 1 100%; margin: 0; font-size: 13px; color: var(--ink-2); text-align: right; }
+.badge.is-baseline { outline: 1.5px dashed var(--ink-3); outline-offset: 1px; }
+.badge .btag {
+  margin-left: .35em; padding: 0 .3em; border-radius: .4em; font-size: .78em; line-height: 1.3;
+  background: rgba(255, 255, 255, .92); color: #14171a;
+}
+.marker .btag-bg { fill: #ffffff; stroke: var(--pitch-halo); stroke-width: 1.5; }
+.marker .btag-text { fill: #14171a; font-size: 13px; font-weight: 800; text-anchor: middle; }
+.marker.is-baseline .pill { stroke-dasharray: 5 3; }
+@media (max-width: 640px) { .gk-note { grid-column: 1 / -1; grid-row: 3; text-align: left; } }

@@ -251,3 +251,37 @@ def test_css_supports_both_os_themes_and_phone_widths():
     assert re.search(r"@media \(max-width: 6\d\dpx\)", CSS), "phone breakpoint"
     assert re.search(r"@media \(min-width: \d+px\)", CSS), "wide-screen layout"
     assert "prefers-reduced-motion" in CSS
+
+
+# ------------------------------------------------------------------ goalkeepers in VAEP mode show their baseline rating
+GK_NOTE = "Goalkeepers show their baseline rating: VAEP does not value shot-stopping reliably."
+
+
+def js_function(name: str) -> str:
+    start = JS.index(f"function {name}(")
+    return JS[start:JS.index("\n  }\n", start)]
+
+
+def test_vaep_goalkeeper_note_is_in_the_page_and_only_shown_for_vaep():
+    assert GK_NOTE in JS
+    assert re.search(r'id="gk-note"[^>]*\bhidden\b', HTML), "the note starts hidden"
+    assert "ui.gkNote.hidden = state.method !== 'vaep'" in JS
+
+
+def test_goalkeeper_substitution_logic_uses_the_baseline_rating():
+    body = js_function("displayed")
+    assert "method === 'vaep'" in body and "position_group === 'GK'" in body
+    assert "ratingOf(player, 'baseline')" in body
+    assert "swapped: rating !== null" in body, "a keeper with no baseline rating stays plain unrated"
+    assert "source: 'baseline'" in body
+
+
+def test_pitch_table_bench_sort_and_tooltips_all_use_the_displayed_value():
+    assert "displayed(p, method)" in js_function("renderPitch") + js_function("renderSubs") + js_function("renderTable")
+    for name in ("renderPitch", "renderSubs", "renderTable", "compareForTable"):
+        assert "ratingOf(" not in js_function(name).replace("displayed(", ""), f"{name} must not read ratingOf directly"
+    assert "displayed(a, method).rating" in js_function("compareForTable"), "table sorts by the displayed value"
+    assert "displayed(player, method)" in js_function("tooltipFor"), "tooltips show the baseline value for keepers"
+    assert "is-baseline" in js_function("badge") and "btag" in js_function("badge")
+    assert "btag-text" in js_function("renderPitch"), "pitch badge carries the B tag"
+    assert ".badge.is-baseline" in CSS and ".marker.is-baseline" in CSS
