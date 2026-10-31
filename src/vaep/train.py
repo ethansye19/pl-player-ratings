@@ -258,7 +258,7 @@ def main(argv=None) -> int:
           f"exactly zero {100 * (v == 0).mean():.1f}%")
     print(f"  raw_vaep: {len(raw):,} player-matches; raw_vaep_holdout: {len(raw_holdout):,}")
     print(f"  wrote {SPLITS_PATH.name}, {ACTION_VALUES_PATH.name}, {RAW_VAEP_PATH.name}, "
-          f"{RAW_VAEP_HOLDOUT_PATH.name}, models/vaep_*.pkl, {METRICS_PATH.relative_to(METRICS_PATH.parents[1])}")
+          f"{RAW_VAEP_HOLDOUT_PATH.name}, models/vaep_*.pkl, {METRICS_PATH.relative_to(METRICS_PATH.parents[1]).as_posix()}")
     return 0
 
 

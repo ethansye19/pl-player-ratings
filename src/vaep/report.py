@@ -109,9 +109,9 @@ def quality_table(metrics: dict) -> pd.DataFrame:
             )
     table = pd.DataFrame(rows)
     folds = table[table["split"] != "holdout"]
-    means = folds.groupby("label", sort=False)[["AUC", "Brier", "Brier (base rate)"]].mean().reset_index()
-    means.insert(0, "split", "fold mean")
-    return pd.concat([table, means], ignore_index=True)
+    means = folds.groupby("label", sort=False)[["rounds", "AUC", "Brier", "Brier (base rate)"]].agg(["mean", "min", "max"])
+    means.columns = [f"{metric} {stat}" for metric, stat in means.columns]
+    return table, means.reset_index()
 
 
 def eye_test(raw: pd.DataFrame, matches: pd.DataFrame, n: int, lowest: bool) -> pd.DataFrame:
@@ -169,8 +169,9 @@ def build_report() -> str:
         f"({len(hold['train'])} matches), score matchweeks {HOLDOUT_LAST_TRAIN_WEEK + 1}-{week.max()} "
         f"({len(hold['score'])} matches). Output: `raw_vaep_holdout.parquet`.\n"
         f"- **{len(splits['folds'])}-fold cross-fitting**: a seeded shuffle (seed {metrics['seed']}) of all "
-        f"{metrics['n_games']} matches into {len(splits['folds'])} folds of {sorted({len(f['score']) for f in splits['folds']})} "
-        "matches. The model of fold *k* is trained on the other folds and scores only fold *k*, so every match "
+        f"{metrics['n_games']} matches into {len(splits['folds'])} folds of "
+        f"{' / '.join(str(n) for n in sorted({len(f['score']) for f in splits['folds']}))} matches. "
+        "The model of fold *k* is trained on the other folds and scores only fold *k*, so every match "
         "is scored exactly once by a model that never saw it. Outputs: `action_values.parquet` (with `fold_id`) "
         "and `raw_vaep.parquet`.\n"
         f"- Inside every split, a seeded {metrics['validation_share']:.0%} of the *training* games is set aside "
@@ -196,8 +197,13 @@ def build_report() -> str:
         "validation games. socceraction's own `val_size` option is not used: it samples validation rows "
         "(not games) and relies on the `early_stopping_rounds` fit argument that lightgbm 4 removed.\n"
         f"- Determinism: `SEED = {metrics['seed']}` seeds the fold shuffle, the validation-game draw, socceraction's "
-        "row shuffle (`np.random.seed`) and lightgbm (`random_state`, `deterministic=True`, `force_row_wise=True`), "
-        "so a rerun reproduces every model and value bit for bit.\n"
+        "row shuffle (`np.random.seed`) and lightgbm (`random_state`, `deterministic=True`, `force_row_wise=True`). "
+        "Verified over four runs of the CLI (two computing the features, two loading the cache): "
+        "`action_values.parquet`, `raw_vaep.parquet`, `raw_vaep_holdout.parquet`, `vaep_splits.json` and the "
+        "feature/label caches were byte-identical every time, with identical best iterations and quality metrics. "
+        "The model pickles are byte-identical between runs that take the same feature path; between the two paths "
+        "their bytes differ only through pickle's string memoisation (the unpickled models re-pickle identically), "
+        "not in content.\n"
         f"- Features are cast to float32 for fitting; scoring uses the float64 features computed on the fly from "
         "the match's actions, exactly as `src.vaep.rate.rate_match` does.\n"
     )
@@ -211,9 +217,11 @@ def build_report() -> str:
         "stopping). `Brier (base rate)` is the Brier score of always predicting the fit set's positive rate; a "
         "useful model is below it. `rounds` is the boosting round early stopping selected.\n"
     )
-    quality = quality_table(metrics)
+    quality, fold_means = quality_table(metrics)
     add(md_table(quality, {"default": 3, "fit positive rate": 4, "held-out positive rate": 4, "val logloss": 5, "Brier": 5, "Brier (base rate)": 5}) + "\n")
-    fold_rows = quality[~quality["split"].isin(["holdout", "fold mean"])]
+    add("Across the 5 folds:\n")
+    add(md_table(fold_means, {"default": 5, "rounds mean": 1, "rounds min": 0, "rounds max": 0, "AUC mean": 3, "AUC min": 3, "AUC max": 3}) + "\n")
+    fold_rows = quality[quality["split"] != "holdout"]
     worst_auc = fold_rows.groupby("label")["AUC"].min()
     beats = (fold_rows["Brier"] < fold_rows["Brier (base rate)"]).all()
     capped = [f"{i['name']}/{label}" for i in [metrics["holdout"]] + metrics["folds"] for label in LABELS if i["labels"][label]["hit_round_cap"]]
