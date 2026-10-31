@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+markers = [
+    "data: needs processed 2015/16 data or cached season ratings in data/processed (Step 2+)",
+    "network: makes real network calls (never run in CI by default)",
+    "llm: calls a real LLM provider (needs an API key and explicit approval)",
+    "slow: takes more than ~30 seconds",
+]
