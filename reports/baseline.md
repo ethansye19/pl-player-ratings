@@ -51,14 +51,19 @@ Definitions are in terms of `events.parquet` columns (statsbombpy naming); `-` m
 | `penalties_saved` | ``goalkeeper_type in ("Penalty Saved", "Penalty Saved to Post")`` (also counted in ``saves``). | 2 | - | - | - | GK: A penalty save is a match-swinging moment worth a whole match of routine keeping |
 | `keeper_claims` | successful claims, punches, sweeps and smothers: (``goalkeeper_type``, ``goalkeeper_outcome``) in Collected/Success, Collected/Collected Twice, Punch/Punched out, Punch/In Play Safe, Keeper Sweeper/Claim, Keeper Sweeper/Clear, Smother/Success In Play, Smother/Won. | 0.25 | - | - | - | GK: Successful claims, punches, sweeps and smothers defuse crosses and through balls |
 
+### Retired stat
+
+``fouls_won`` (``type == "Foul Won"``, weight 0.10 in DEF/MID/FWD) was retired when ``penalties_scored`` was added, because ``tests/test_baseline.py`` caps STATS at 35. Measured on the pre-change season outputs it had the smallest share of the raw-score variance of any stat kept in play: 0.14% (DEF), 0.25% (MID), 0.25% (FWD); the Spearman correlation of each group's raw scores with and without it was 0.9991 / 0.9980 / 0.9971. ``penalties_missed`` scored lower still (0.02% / 0.13% / 0.24%) but stays as the counterpart of ``penalties_scored`` and maps to an FPL field; ``pressures`` was the next candidate (0.15% / 0.32% / 0.20%). Nothing from ``fouls_won`` was folded into another stat.
+
 ### How low activity is treated
 
 The raw score has no minutes term: a player with no notable events scores exactly 0. Routine volume (passes,
 pressures, recoveries, carries) earns little while every misplaced pass, lost duel, lost possession and goal
-conceded while on the pitch costs something, so a 15-minute substitute with nothing to show sits at ~0 in the
-lower-middle of the group rather than at the bottom, and a quiet full-match starter lands a little above the
-middle. The bottom of each group is reserved for red cards, own goals, errors, penalties conceded and heavy
-defeats (see section 2 for the measured positions and section 4 for the lowest scores).
+conceded while on the pitch costs something, so a 15-minute substitute with nothing to show sits at ~0, below
+the quiet full-match starters (who land a little above the middle) but above everyone with a clearly negative
+game. The bottom of each group is reserved for red cards, own goals, errors, penalties conceded and heavy
+defeats (see section 2 for the measured positions, including before/after the Step 4 decisions, and section 4
+for the lowest scores).
 
 ## 2. Raw-score distribution per position group
 

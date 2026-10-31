@@ -62,9 +62,7 @@ def contributions(row: pd.Series, group: str, k: int = 3) -> str:
 def docstring_section(title: str) -> list[str]:
     """Body of a titled section of the weights docstring (up to the next underlined title)."""
     doc = weights_module.__doc__ or ""
-    marker = title + "
-" + "-" * len(title) + "
-"
+    marker = title + "\n" + "-" * len(title) + "\n"
     if marker not in doc:
         return []
     body = doc.split(marker, 1)[1]
