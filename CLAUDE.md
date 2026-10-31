@@ -199,6 +199,10 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   CLI `python -m src.baseline.rate` writes `baseline_stats.parquet` and `raw_baseline.parquet`.
 - Known pitfall: substitutes with few minutes have few actions; decide explicitly how
   the raw score treats low activity and document it in `weights.py`.
+- After the Step 4 validation (2026-10-31): `goals` counts non-penalty goals only and
+  `penalties_scored` (weight 1.25 in every group) counts penalty goals; `key_passes`
+  excludes assists; `fouls_won` was retired to stay within 35 stats; DEF/MID team-context
+  weights were halved. Anything summing a player's goals must use `goals + penalties_scored`.
 
 ### `src/vaep/`
 - `splits.py`: `Split(name: str, train: list[int], score: list[int])`;
@@ -308,7 +312,9 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
  "credits": "Data: StatsBomb Open Data (https://github.com/statsbomb/open-data)"}
 ```
 Rating is `null` exactly when `minutes < 10`. Colours: red < 6.0, orange 6.0–6.9,
-green 7.0–7.9, blue >= 8.0, grey = unrated. A toggle switches between methods.
+green 7.0–7.9, blue >= 8.0, grey = unrated. A toggle switches between methods. In VAEP
+mode goalkeepers display their baseline rating with a "B" tag and a note, because VAEP
+does not value shot-stopping (validation finding A); payloads are unchanged.
 `validate_payload` (src/pipeline/export_web.py) also requires `schema_version == 1`,
 `raw_scores` keys equal to `methods`, numeric non-negative `minutes`, boolean `is_starter`
 and 11 starters per side; per-player `minute_on` / `minute_off` are optional (the page shows
