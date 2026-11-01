@@ -293,7 +293,10 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   gameweek (latest finished when `gw` is None), runs the checks, and **writes nothing
   if any check fails**; on success writes `<out_dir>/index.json` (one entry per
   fixture) and one payload per fixture. CLI `python -m src.pipeline.gameweek` exits 1
-  with the failures printed.
+  with the failures printed; on success it also merges the gameweek into `web/data/index.json`
+  (`merge_site_index`) and mirrors the API responses under `data/raw/fpl/`. Built 2026-10-31:
+  15 of 35 baseline stats map to FPL fields (goals include penalties, CBI is one field), see
+  `reports/fpl_mapping.md`; FPL names (`known_name`/`web_name`) are short forms like "N.Jackson".
 - `export_web.py`: `match_payload(match_id) -> dict` (2015/16, both methods),
   `validate_payload(payload)` (raises `ValueError`), `export_season(out_dir=web/data)`
   writing `web/data/index.json` and one JSON per match.

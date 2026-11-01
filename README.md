@@ -10,10 +10,10 @@ rare), built two ways and compared:
 Plus a match-ratings web page, a grounded "why this rating?" explanation feature, and a
 current-season gameweek pipeline.
 
-> **Status:** Steps 1–3 complete: ingestion, both rating methods, the scaler and the
-> web page are built and rated for 2015/16. The explanation feature (Step 5) and the
-> current-season pipeline (Step 6) are not implemented yet; their tests fail by design.
-> See `CLAUDE.md` for the working contract and `reports/` for the build reports.
+> **Status:** all six steps are built: ingestion, both rating methods, the scaler, the
+> web page, the explanation feature and the current-season pipeline. The full suite
+> passes. See `CLAUDE.md` for the working contract and `reports/` for the build,
+> validation and mapping reports.
 
 ## Setup
 
@@ -97,11 +97,30 @@ every number in the text appears in the input. Providers are selected with
 `RATING_LLM_MODEL` to override the default `claude-opus-5-5`). An LLM answer that fails the
 number check is replaced by the template text and flagged `verified=False`.
 
+## Step 6: the current season (Fantasy Premier League API)
+
+```powershell
+.venv\Scripts\python -m src.pipeline.gameweek            # latest finished gameweek -> web/data/current/
+.venv\Scripts\python -m src.pipeline.gameweek --gw 8     # a specific finished gameweek
+```
+
+The pipeline pulls `bootstrap-static`, the gameweek's `fixtures` and the `event/<gw>/live`
+stats, maps them onto the baseline model (`src/pipeline/fpl_mapping.py` and
+`reports/fpl_mapping.md` list every stat, its FPL field or why FPL lacks it, and the two
+weight adjustments), fits the percentile scaler on all finished gameweeks of the season
+so far, rates the gameweek, and runs validity checks (every team with a fixture rated, all
+20 teams present, ratings finite and within bounds with one decimal, nobody under 10
+minutes rated, gameweek mean within 6.5 ± 0.3). If a check fails nothing is written. On
+success it writes one payload per fixture plus `index.json` under `web/data/current/`,
+mirrors the API responses under `data/raw/fpl/`, and merges the fixtures into the page's
+`web/data/index.json`, so the match picker shows both seasons. Only the baseline method
+runs on FPL data: there is no event stream for VAEP.
+
 ## Data credits
 
 - Development and validation data: **StatsBomb Open Data**, Premier League 2015/16
   (competition_id=2, season_id=27). https://github.com/statsbomb/open-data
   Used under the StatsBomb Public Data User Agreement.
-- Current-season data: the official **Fantasy Premier League API**.
+- Current-season data: the official **Fantasy Premier League API** (https://fantasy.premierleague.com/api/).
 
 _Setup for each step, method descriptions and known limitations are added as the steps land._
