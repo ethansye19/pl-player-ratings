@@ -67,6 +67,33 @@ class RunResult:
     failures: list[str] = field(default_factory=list)
     written: list[Path] = field(default_factory=list)
     ratings: pd.DataFrame | None = None
+    skipped: bool = False  # True when only_if_new found nothing newer than the published output
+
+
+STATE_FILE = "state.json"
+
+
+def existing_state(out_dir: Path | str) -> dict[str, Any] | None:
+    """What is currently published in out_dir: {'gameweek', 'fixtures', 'rated_rows', ...} or None."""
+    out_dir = Path(out_dir)
+    state_path = out_dir / STATE_FILE
+    if state_path.exists():
+        try:
+            return json.loads(state_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            pass
+    index_path = out_dir / "index.json"
+    if not index_path.exists():
+        return None
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        rated = 0
+        for entry in index:
+            payload = json.loads((out_dir / entry["path"]).read_text(encoding="utf-8"))
+            rated += sum(1 for p in payload["players"] if any(v is not None for v in p["ratings"].values()))
+        return {"gameweek": max(int(e["matchweek"]) for e in index), "fixtures": len(index), "rated_rows": rated}
+    except (ValueError, OSError, KeyError):
+        return None
 
 
 def _num(value: Any) -> float:
@@ -242,10 +269,27 @@ def _payload(fixture: dict[str, Any], rated: pd.DataFrame, unrated: pd.DataFrame
     }
 
 
-def run(client: FplClient, out_dir: Path | str = DEFAULT_OUT, gw: int | None = None) -> RunResult:
+def run(
+    client: FplClient,
+    out_dir: Path | str = DEFAULT_OUT,
+    gw: int | None = None,
+    only_if_new: bool = False,
+    allow_regression: bool = False,
+) -> RunResult:
+    """Rate a gameweek and publish it to out_dir.
+
+    only_if_new: do nothing (RunResult.skipped) unless the target gameweek is newer than
+    the one already published in out_dir.
+    allow_regression: by default a run refuses to replace published output with an older
+    gameweek, fewer fixtures or fewer rated rows for the same gameweek.
+    """
     out_dir = Path(out_dir)
     bootstrap = client.bootstrap()
     target = int(gw) if gw is not None else latest_finished_gameweek(bootstrap)
+    published = existing_state(out_dir)
+    if only_if_new and published is not None and int(published["gameweek"]) >= target:
+        log.info("gameweek %d is already published (latest finished: %d); nothing to do", published["gameweek"], target)
+        return RunResult(target, True, [], [], None, skipped=True)
     done = [g for g in finished_gameweeks(bootstrap) if g <= target]
     if target not in done:
         return RunResult(target, False, [f"gameweek {target} is not finished and data-checked"])
@@ -266,6 +310,14 @@ def run(client: FplClient, out_dir: Path | str = DEFAULT_OUT, gw: int | None = N
     fixtures = fixtures_by_gw[target]
 
     failures = run_checks(rated, fixtures, list(teams.values()))
+    if published is not None and not allow_regression:
+        if target < int(published["gameweek"]):
+            failures.append(f"refusing to replace published gameweek {published['gameweek']} with older gameweek {target}")
+        elif target == int(published["gameweek"]):
+            if len(fixtures) < int(published.get("fixtures", 0)):
+                failures.append(f"refusing to overwrite gameweek {target}: {len(fixtures)} fixtures now vs {published['fixtures']} published")
+            if len(rated) < int(published.get("rated_rows", 0)):
+                failures.append(f"refusing to overwrite gameweek {target}: {len(rated)} rated rows now vs {published['rated_rows']} published")
     if failures:
         for f in failures:
             log.error("check failed: %s", f)
@@ -280,11 +332,12 @@ def run(client: FplClient, out_dir: Path | str = DEFAULT_OUT, gw: int | None = N
         validate_payload(payload)
         payloads.append(payload)
 
+    # everything is validated; now write each file to a temp name and swap it into place
     written: list[Path] = []
     (out_dir / folder).mkdir(parents=True, exist_ok=True)
     for payload in payloads:
         path = out_dir / folder / f"{payload['match_id']}.json"
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        _atomic_write(path, json.dumps(payload, ensure_ascii=False, indent=1))
         written.append(path)
     index = [
         {
@@ -295,11 +348,24 @@ def run(client: FplClient, out_dir: Path | str = DEFAULT_OUT, gw: int | None = N
         for p in payloads
     ]
     index_path = out_dir / "index.json"
-    index_path.write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
+    _atomic_write(index_path, json.dumps(index, ensure_ascii=False, indent=1))
     written.append(index_path)
     scaler.save(out_dir / "scaler_baseline.json")
     written.append(out_dir / "scaler_baseline.json")
+    state = {
+        "gameweek": target, "season": season, "fixtures": len(payloads), "rated_rows": int(len(rated)),
+        "appearances": int(len(target_rows)), "fit_gameweeks": done, "fit_rows": int(len(season_rows)),
+        "written_at_utc": pd.Timestamp.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    _atomic_write(out_dir / STATE_FILE, json.dumps(state, indent=1))
+    written.append(out_dir / STATE_FILE)
     return RunResult(target, True, [], written, rated)
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
 
 
 def merge_site_index(out_dir: Path | str = DEFAULT_OUT, site_dir: Path | str = Path("web") / "data") -> int:
@@ -332,9 +398,14 @@ def main() -> int:
     parser.add_argument("--gw", type=int, default=None, help="gameweek to rate (default: latest finished)")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--cache", type=Path, default=Path("data") / "raw" / "fpl", help="mirror API responses here")
+    parser.add_argument("--if-new", action="store_true", help="do nothing unless a newer gameweek than the published one has finished")
+    parser.add_argument("--allow-regression", action="store_true", help="allow replacing published output with fewer fixtures/rows or an older gameweek")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    result = run(HttpFplClient(cache_dir=args.cache), out_dir=args.out, gw=args.gw)
+    result = run(HttpFplClient(cache_dir=args.cache), out_dir=args.out, gw=args.gw, only_if_new=args.if_new, allow_regression=args.allow_regression)
+    if result.skipped:
+        print(f"nothing to do: latest finished gameweek {result.gameweek} is already published in {args.out}")
+        return 0
     if not result.ok:
         print(f"gameweek {result.gameweek}: checks FAILED, nothing written")
         for f in result.failures:

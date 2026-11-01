@@ -116,6 +116,17 @@ mirrors the API responses under `data/raw/fpl/`, and merges the fixtures into th
 `web/data/index.json`, so the match picker shows both seasons. Only the baseline method
 runs on FPL data: there is no event stream for VAEP.
 
+**Scheduling.** `scripts\run_gameweek.ps1` runs the pipeline with `--if-new` and appends to
+`logs/pipeline.log`: it does nothing when the latest finished gameweek is already published
+(`web/data/current/state.json`), writes nothing when a validity check fails, and refuses to
+replace published output with an older gameweek or with fewer fixtures or rated rows
+(`--allow-regression` overrides). Register it with Task Scheduler, for example daily at 09:00:
+
+```powershell
+schtasks /Create /TN "RatingSystem FPL gameweek" /SC DAILY /ST 09:00 /F `
+  /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\Ethan\rating-system\scripts\run_gameweek.ps1"
+```
+
 ## Data credits
 
 - Development and validation data: **StatsBomb Open Data**, Premier League 2015/16
