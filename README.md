@@ -123,9 +123,17 @@ replace published output with an older gameweek or with fewer fixtures or rated 
 (`--allow-regression` overrides). Register it with Task Scheduler, for example daily at 09:00:
 
 ```powershell
-schtasks /Create /TN "RatingSystem FPL gameweek" /SC DAILY /ST 09:00 /F `
-  /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\Ethan\rating-system\scripts\run_gameweek.ps1"
+$action   = New-ScheduledTaskAction -Execute powershell.exe -WorkingDirectory C:\Users\Ethan\rating-system `
+              -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\Ethan\rating-system\scripts\run_gameweek.ps1"'
+$trigger  = New-ScheduledTaskTrigger -Daily -At 9:00AM
+$trigger.StartBoundary = (Get-Date -Format yyyy-MM-dd) + "T09:00:00"   # no UTC offset: 09:00 local all year
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+              -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName "RatingSystem FPL gameweek" -Action $action -Trigger $trigger -Settings $settings -Force
 ```
+
+`-StartWhenAvailable` runs a missed 09:00 as soon as the machine wakes; the battery flags stop
+Task Scheduler from skipping the run on a laptop that is unplugged.
 
 ## Known limitations
 
