@@ -31,6 +31,8 @@ current-season gameweek pipeline (baseline only, from the FPL API).
   (including the current-season FPL output) stay local and gitignored. `docs/` is the
   committed site, rebuilt with `python -m src.pipeline.export_site`, which writes nothing but
   2015/16 and verifies the folder; `tests/test_site.py` checks the committed copy.
+  The code is MIT-licensed (`LICENSE`); the StatsBomb data and everything derived from it
+  (`docs/data/`, `reports/`) stay under StatsBomb's open data terms and are never relabelled MIT.
 - **Checkpoints.** Stop at every ⏸ CHECKPOINT in PROMPT.md and show results. Never skip.
 - **No step is done until its tests ran and the output was shown.**
 - **Do not weaken, skip or delete a test to make it pass.** If a test is wrong, say so

@@ -216,6 +216,21 @@ local only: the public page carries the 2015/16 season.
 - The public page (`docs/`, served by GitHub Pages) contains the 2015/16 season only.
   Current-season ratings are not published.
 
+## How this was built
+
+This project was built with [Claude Code](https://claude.com/claude-code) in a spec-driven,
+multi-agent workflow. The spec is [`PROMPT.md`](PROMPT.md): six steps, each ending in a
+checkpoint. The working contract the agents followed (data rules, module interfaces, test
+rules) is [`CLAUDE.md`](CLAUDE.md). Each step was built by parallel build agents, one per
+module, and checked by an independent verifier agent that re-derived the numbers from the
+processed data; its code is in `src/validation/` and its findings are in
+[`reports/validation.md`](reports/validation.md).
+
+I designed the spec, reviewed every checkpoint before the next step started, and made the
+modelling decisions: the weight changes after the first validation pass, valuing shots by
+their xG in the VAEP labels instead of counting only goals, and showing goalkeepers with
+their baseline rating in VAEP mode.
+
 ## Setup
 
 Python **3.11** is required: `socceraction` 1.4.2 pins `pandas<2` and `numpy<2`, which have
@@ -276,6 +291,9 @@ docs/               the public GitHub Pages site: the page plus the 2015/16 payl
 tests/              pytest suite; synthetic fixtures only
 reports/            baseline, VAEP, scale, validation (with before/after) and FPL mapping reports
 scripts/            the scheduled-task wrapper for the gameweek pipeline
+PROMPT.md           the spec the project was built from, step by step
+CLAUDE.md           the working contract the build agents followed
+LICENSE             MIT, for the code (the data terms are below)
 ```
 
 Raw data, processed data, logs and the current-season output are never committed
@@ -299,3 +317,13 @@ Current-season data comes from the official
 VAEP is implemented with [`socceraction`](https://github.com/ML-KULeuven/socceraction)
 (Decroos, Bransen, Van Haaren and Davis, "Actions Speak Louder than Goals: Valuing Player
 Actions in Soccer", KDD 2019).
+
+## License
+
+The code in this repository is released under the [MIT License](LICENSE).
+
+The StatsBomb data and everything derived from it are **not** covered by the MIT License.
+The match payloads under `docs/data/` and the tables under `reports/` remain under the
+[StatsBomb Public Data User Agreement](https://github.com/statsbomb/open-data/blob/master/LICENSE.pdf)
+(StatsBomb's open data terms), not MIT. If you reuse them, state StatsBomb as the source and
+use their logo, as that agreement asks.
