@@ -131,16 +131,28 @@ class TemplateProvider:
                 f"{who} rated {data['rating']:.1f} with the {method} method in {score}, "
                 f"playing {data['minutes']:.1f} minutes."
             )
+        surname = data["player_name"].split()[-1]
+        top_pos, top_neg = data["top_positive"][:3], data["top_negative"][:2]
         if data["method"] == "baseline":
-            pos = [f"{_count_phrase(i)} ({i['value']:+.2f})" for i in data["top_positive"]]
-            neg = [f"{_count_phrase(i)} ({i['value']:+.2f})" for i in data["top_negative"]]
-            positives = f"The biggest positives were {_join(pos)}." if pos else "No stat contributed positively."
-            negatives = f"The main negatives were {_join(neg)}." if neg else "Nothing counted against him."
+            pos = [f"{_count_phrase(i)} ({i['value']:+.2f})" for i in top_pos]
+            neg = [f"{_count_phrase(i)} ({i['value']:+.2f})" for i in top_neg]
+            if data["rating"] is not None and pos:
+                positives = f"{surname}'s {data['rating']:.1f} came mostly from {_join(pos)}."
+            elif pos:
+                positives = f"His best contributions were {_join(pos)}."
+            else:
+                positives = "No stat counted in his favour."
+            negatives = f"Against that, {_join(neg)} pulled the score down." if neg else "Nothing counted against him."
         else:
-            pos = [f"{_action_phrase(i)} ({i['value']:+.2f})" for i in data["top_positive"]]
-            neg = [f"{_action_phrase(i)} ({i['value']:+.2f})" for i in data["top_negative"]]
-            positives = f"His most valuable actions were {_join(pos)}." if pos else "No action added value."
-            negatives = f"The costliest were {_join(neg)}." if neg else "No action cost value."
+            pos = [f"{_action_phrase(i)} ({i['value']:+.2f})" for i in top_pos]
+            neg = [f"{_action_phrase(i)} ({i['value']:+.2f})" for i in top_neg]
+            if data["rating"] is not None and pos:
+                positives = f"{surname}'s {data['rating']:.1f} rests on {_join(pos)}."
+            elif pos:
+                positives = f"His most valuable actions were {_join(pos)}."
+            else:
+                positives = "None of his actions added value."
+            negatives = f"The costliest moments were {_join(neg)}." if neg else "No action cost value."
         closing = "" if data["raw_score"] is None else f" Raw score {data['raw_score']:+.2f}."
         return f"{opening} {positives} {negatives}{closing}"
 
