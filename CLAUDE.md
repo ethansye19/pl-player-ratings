@@ -265,6 +265,8 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   `claude-opus-5-5`; the `anthropic` package is not in the pinned environment and is imported
   lazily). The LLM prompt forbids mentioning anything absent from the input, and the output is
   checked with `verify_numbers` before it is shown (template fallback on failure).
+  Decision 2026-10-31: the template provider stays the default; the Anthropic provider is
+  wired but unused and untested with a key until the owner decides otherwise.
 - `explain.py`: `explain(match_id, player_id, method) -> Explanation(text, input, provider, verified)`.
   If the provider's text fails `verify_numbers`, fall back to the template text and set
   `verified=False`; the template text itself always verifies.
@@ -297,6 +299,9 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   (`merge_site_index`) and mirrors the API responses under `data/raw/fpl/`. Built 2026-10-31:
   15 of 35 baseline stats map to FPL fields (goals include penalties, CBI is one field), see
   `reports/fpl_mapping.md`; FPL names (`known_name`/`web_name`) are short forms like "N.Jackson".
+  Scheduled: Windows task "RatingSystem FPL gameweek" runs `scripts/run_gameweek.ps1` daily at
+  09:00 with run-after-missed-start, logging to `logs/pipeline.log`; the pipeline's `--if-new`
+  and regression guard (`state.json`) make reruns safe.
 - `export_web.py`: `match_payload(match_id) -> dict` (2015/16, both methods),
   `validate_payload(payload)` (raises `ValueError`), `export_season(out_dir=web/data)`
   writing `web/data/index.json` and one JSON per match.

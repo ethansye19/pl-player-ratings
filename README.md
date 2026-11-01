@@ -127,6 +127,25 @@ schtasks /Create /TN "RatingSystem FPL gameweek" /SC DAILY /ST 09:00 /F `
   /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\Ethan\rating-system\scripts\run_gameweek.ps1"
 ```
 
+## Known limitations
+
+- **Current-season ratings use FPL data only.** The FPL API has no passing, shot,
+  dribble or duel counts, so 20 of the 35 baseline stats are missing there and
+  midfielders are rated mainly on defensive actions (tackles, clearances/blocks/
+  interceptions, recoveries) and team context (goals conceded, clean sheets, xG conceded);
+  forwards mainly on goals, assists and xG. Treat current-season ratings as coarser than
+  the 2015/16 ones, and expect quiet midfielders to cluster near the middle.
+- Only the baseline method runs on the current season: VAEP needs event data.
+- FPL positions follow the game's classification (wingers are usually MID), and FPL
+  player names are short display names.
+- VAEP undervalues defensive work (see the caveat under Step 3); goalkeepers are shown
+  with their baseline rating in VAEP mode.
+- Explanations default to the template provider. The Anthropic provider is wired up
+  behind `RATING_LLM_PROVIDER=anthropic` but has not been used or tested with a key.
+- Ratings are percentile-anchored within each season: a 7.0 in 2015/16 and a 7.0 in the
+  current season are both "better than about three quarters of the group", not the same
+  underlying performance.
+
 ## Data credits
 
 - Development and validation data: **StatsBomb Open Data**, Premier League 2015/16
