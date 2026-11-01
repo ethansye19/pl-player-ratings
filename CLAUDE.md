@@ -24,7 +24,13 @@ current-season gameweek pipeline (baseline only, from the FPL API).
 - **Never invent, simulate or fill in data.** Synthetic data is allowed only inside
   `tests/` (fixtures, fakes) and must be labelled synthetic. Nothing synthetic goes into
   `data/` or `web/data/`. If a source fails, stop and report; do not substitute.
-- **Credit StatsBomb** in the README and on the web page.
+- **Credit StatsBomb** in the README and on the web page (source credit plus their logo,
+  `web/img/statsbomb-logo.png`, as the open-data terms ask).
+- **Public release.** The GitHub repo and the Pages site publish code, reports, the README
+  assets and the 2015/16 StatsBomb-derived payloads only. `data/`, `logs/` and `web/data/`
+  (including the current-season FPL output) stay local and gitignored. `docs/` is the
+  committed site, rebuilt with `python -m src.pipeline.export_site`, which writes nothing but
+  2015/16 and verifies the folder; `tests/test_site.py` checks the committed copy.
 - **Checkpoints.** Stop at every ⏸ CHECKPOINT in PROMPT.md and show results. Never skip.
 - **No step is done until its tests ran and the output was shown.**
 - **Do not weaken, skip or delete a test to make it pass.** If a test is wrong, say so
@@ -64,7 +70,9 @@ rating-system/
 ├── src/scale/         raw_score -> rating (percentile scaler), colour bands
 ├── src/explain/       grounded explanations, pluggable LLM provider
 ├── src/pipeline/      FPL current-season pipeline + web JSON export
-├── web/               static single-page app (index.html, app.js, styles.css); web/data/ is generated
+├── web/               static single-page app (index.html, app.js, styles.css, img/); web/data/ is generated
+├── docs/              the public GitHub Pages site: page + 2015/16 payloads ONLY (python -m src.pipeline.export_site)
+├── assets/            README images (screenshot)
 ├── tests/             pytest suite; tests/fixtures/ holds synthetic samples
 └── reports/           validation.md, vaep_splits.md, fpl_mapping.md, ...
 ```
@@ -305,6 +313,12 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
 - `export_web.py`: `match_payload(match_id) -> dict` (2015/16, both methods),
   `validate_payload(payload)` (raises `ValueError`), `export_season(out_dir=web/data)`
   writing `web/data/index.json` and one JSON per match.
+- `export_site.py`: `build_site(out_dir="docs", processed_dir, web_dir="web") -> SiteSummary`
+  wipes and rebuilds the Pages folder (only one it built before: the `.nojekyll` marker), copies
+  `index.html`, `app.js`, `styles.css`, `img/`, runs `export_season` into `<out>/data` and then
+  `verify_site(out_dir)`, which raises unless every entry and payload is 2015/16 StatsBomb, no
+  `current` folder exists and every JSON file is referenced. CLI `python -m src.pipeline.export_site`
+  (`--verify-only` to check an existing folder). GitHub Pages serves `main:/docs`.
 
 ### Web payload (what `web/` loads; `tests/fixtures/sample_match.json` is a synthetic example)
 

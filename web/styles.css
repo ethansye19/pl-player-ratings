@@ -374,6 +374,13 @@ main { padding-top: 16px; padding-bottom: 32px; }
 }
 .credit { font-size: 14px; font-weight: 600; }
 .fine { font-size: 12.5px; }
+/* StatsBomb's colour-positive logo is designed for a light background, so it keeps a white chip in both themes */
+.sb-logo {
+  display: inline-flex; align-self: flex-start; align-items: center;
+  margin: 4px 0 6px; padding: 6px 10px; border-radius: 6px;
+  background: #ffffff; border: 1px solid var(--line);
+}
+.sb-logo img { display: block; height: 30px; width: auto; }
 .noscript { padding: 16px; text-align: center; }
 
 /* ------------------------------------------------------------------ wide screens: pitch beside the table */
