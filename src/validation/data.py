@@ -12,6 +12,7 @@ PROCESSED = ROOT / "data" / "processed"
 RAW = ROOT / "data" / "raw" / "statsbomb"
 WEB_DATA = ROOT / "web" / "data"
 REPORT_PATH = ROOT / "reports" / "validation.md"
+XG_LABELS = PROCESSED / "xg_labels"  # frozen VAEP outputs with xG labels and socceraction's formula (before option 3)
 METHODS = ("baseline", "vaep")
 
 ACTION_VALUE_COLUMNS = [
@@ -60,6 +61,12 @@ def load() -> Data:
     data.stats = _read("baseline_stats.parquet")
     data.actions_values = _read("action_values.parquet", columns=ACTION_VALUE_COLUMNS)
     data.splits = json.loads((PROCESSED / "vaep_splits.json").read_text(encoding="utf-8"))
+    data.both = join_both(data)
+    return data
+
+
+def join_both(data: Data) -> pd.DataFrame:
+    """Rated rows of both methods side by side, with lineup details and the matchweek."""
     rb, rv = data.ratings["baseline"], data.ratings["vaep"]
     both = rb.merge(rv[["match_id", "player_id", "raw_score", "rating"]], on=["match_id", "player_id"], suffixes=("_b", "_v"))
     both = both.merge(
@@ -68,8 +75,23 @@ def load() -> Data:
     )
     weeks = data.matches.set_index("match_id")["match_week"]
     both["week"] = both["match_id"].map(weeks)
-    data.both = both
-    return data
+    return both
+
+
+def load_xg_labels(data: Data, folder: pathlib.Path | None = None) -> Data | None:
+    """The state after the Step 4 decisions: the current baseline with the frozen xG-label VAEP outputs.
+
+    Returns None when ``data/processed/xg_labels/`` is absent (a fresh checkout).
+    """
+    folder = XG_LABELS if folder is None else folder
+    if not (folder / "ratings_vaep.parquet").exists():
+        return None
+    old = Data(matches=data.matches, lineups=data.lineups, stats=data.stats, splits=data.splits)
+    old.raw = {"baseline": data.raw["baseline"], "vaep": pd.read_parquet(folder / "raw_vaep.parquet")}
+    old.ratings = {"baseline": data.ratings["baseline"], "vaep": pd.read_parquet(folder / "ratings_vaep.parquet")}
+    old.actions_values = pd.read_parquet(folder / "action_values.parquet", columns=ACTION_VALUE_COLUMNS)
+    old.both = join_both(old)
+    return old
 
 
 def md_table(headers: list[str], rows: list[list], align: str | None = None) -> str:
