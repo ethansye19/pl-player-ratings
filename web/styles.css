@@ -207,6 +207,7 @@ select:disabled, .step:disabled { opacity: .55; }
   padding: 0 16px; border-radius: 999px;
   font-size: 14px; font-weight: 600; color: var(--ink-2);
 }
+.seg-tag { margin-left: 6px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .seg input:checked + span { background: var(--seg-on-bg); color: var(--seg-on-ink); }
 .seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
 .segmented:disabled { opacity: .6; }

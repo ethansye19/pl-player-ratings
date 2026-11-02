@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="description" content="Per-match player ratings (3.0 to 10.0) for the 2015/16 Premier League, with a hand-weighted baseline model and a VAEP model side by side. Data: StatsBomb Open Data.">
+  <meta name="description" content="Per-match player ratings (3.0 to 10.0) for the 2015/16 Premier League. The headline rating is a hand-weighted baseline model; an experimental VAEP model runs alongside. Data: StatsBomb Open Data.">
   <title>Premier League match ratings</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
@@ -42,7 +42,7 @@
         <fieldset class="segmented" id="method-toggle" aria-labelledby="method-label" disabled>
           <legend class="visually-hidden">Rating method</legend>
           <label class="seg"><input type="radio" name="method" value="baseline" checked><span>Baseline</span></label>
-          <label class="seg"><input type="radio" name="method" value="vaep"><span>VAEP</span></label>
+          <label class="seg"><input type="radio" name="method" value="vaep"><span>VAEP <small class="seg-tag">experimental</small></span></label>
         </fieldset>
       </div>
       <p id="gk-note" class="gk-note" role="note" hidden></p>
@@ -155,7 +155,7 @@
       <img src="img/statsbomb-logo.png" alt="StatsBomb" width="187" height="30" decoding="async">
     </a>
     <p id="credit" class="credit">Data: <a href="https://github.com/statsbomb/open-data" target="_blank" rel="noopener noreferrer">StatsBomb Open Data</a></p>
-    <p class="muted fine">Ratings are the output of two statistical models, not StatsBomb's. A player gets a rating only after 10 minutes on the pitch.</p>
+    <p class="muted fine">The headline rating is the baseline model; VAEP is an experimental second model. Both are this project's models, not StatsBomb's ratings. A player gets a rating only after 10 minutes on the pitch.</p>
   </footer>
 
   <div id="sr-status" class="visually-hidden" role="status" aria-live="polite"></div>
