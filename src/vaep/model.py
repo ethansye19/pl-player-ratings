@@ -5,8 +5,9 @@
 ``cross_entropy`` objective, so they accept the xG-based soft labels in [0, 1] as well
 as the binary outcome labels. socceraction's ``VAEP.fit`` builds ``LGBMClassifier``s,
 which reject non-binary targets, hence this thin fit/predict path; the game-state
-features (``compute_features``) and the value formula (``socceraction.vaep.formula``)
-are socceraction's, unchanged, so ``rate(game, game_actions)`` keeps its contract.
+features (``compute_features``) are socceraction's, unchanged. ``rate(game, game_actions)``
+keeps socceraction's contract; since 2026-11-02 it turns the probabilities into values with
+``src.vaep.value.value`` (socceraction's formula plus the penalty and after-shot rules, "option 3").
 
 How a model is fitted: one regressor per label, early stopping on the validation games
 -- a seeded 15 % of the split's *training games* (whole games, never individual rows,
@@ -28,7 +29,6 @@ from sklearn.metrics import brier_score_loss, roc_auc_score
 from socceraction import spadl
 from socceraction.vaep import VAEP
 from socceraction.vaep import features as fs
-from socceraction.vaep import formula
 
 from src.contract import SEED
 from src.vaep.config import (
@@ -41,6 +41,7 @@ from src.vaep.config import (
     TREE_PARAMS,
     VALIDATION_SHARE,
 )
+from src.vaep.value import value as option3_value
 
 log = logging.getLogger(__name__)
 
@@ -111,12 +112,19 @@ class SoftLabelVAEP(VAEP):
         return pd.DataFrame({label: self.models[label].predict(features) for label in LABELS}, index=X.index)
 
     def rate(self, game: pd.Series, game_actions: pd.DataFrame, game_states: pd.DataFrame | None = None) -> pd.DataFrame:
-        """Offensive, defensive and VAEP value of each action (socceraction's formula on our probabilities)."""
+        """Offensive, defensive and VAEP value of each action of one game (option 3, ``src.vaep.value``).
+
+        An optional ``shot_xg`` column in ``game_actions`` (StatsBomb xG of each shot action, NaN
+        elsewhere; added by ``src.vaep.rate.action_values_for_match``) feeds the penalty and
+        after-shot rules. It is not a model feature and is dropped before the features are built.
+        """
+        shot_xg = game_actions["shot_xg"].to_numpy(dtype="float64") if "shot_xg" in game_actions.columns else None
+        game_actions = game_actions.drop(columns=["shot_xg"], errors="ignore")
         actions_with_names = spadl.add_names(game_actions)
         if game_states is None:
             game_states = self.compute_features(game, game_actions)
         probabilities = self.predict_probabilities(game_states)
-        return formula.value(actions_with_names, probabilities["scores"], probabilities["concedes"])
+        return option3_value(actions_with_names, probabilities["scores"].to_numpy(), probabilities["concedes"].to_numpy(), shot_xg)
 
     def score(self, X: pd.DataFrame, y: pd.DataFrame, y_soft: pd.DataFrame | None = None) -> dict:
         """Brier and AUROC against the binary labels ``y``; plus Brier against ``y_soft`` when given."""

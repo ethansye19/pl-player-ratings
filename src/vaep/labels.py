@@ -33,9 +33,13 @@ from src.vaep.config import EVENTS_PATH, LABELS, NR_LABEL_ACTIONS
 SHOT_TYPES = ("shot", "shot_penalty", "shot_freekick")
 
 
-def shot_xg_lookup(events_path: Path = EVENTS_PATH) -> pd.Series:
-    """StatsBomb xG of every shot event, indexed by event id (joins on SPADL ``original_event_id``)."""
-    events = pd.read_parquet(events_path, columns=["id", "type", "shot_statsbomb_xg"])
+def shot_xg_lookup(events_path: Path = EVENTS_PATH, match_id: int | None = None) -> pd.Series:
+    """StatsBomb xG of every shot event, indexed by event id (joins on SPADL ``original_event_id``).
+
+    With ``match_id`` only that match's events are read (the per-match rating function uses this).
+    """
+    filters = [("type", "==", "Shot")] + ([("match_id", "==", int(match_id))] if match_id is not None else [])
+    events = pd.read_parquet(events_path, columns=["id", "type", "shot_statsbomb_xg"], filters=filters)
     shots = events.loc[events["type"] == "Shot"]
     return shots.set_index("id")["shot_statsbomb_xg"].astype("float64")
 
