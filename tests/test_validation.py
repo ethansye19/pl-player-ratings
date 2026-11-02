@@ -70,3 +70,32 @@ def test_web_payload_check_skips_current_season_entries(tmp_path):
     _write_json(tmp_path / "2015-16" / "101.json", {"match_id": 101, "players": players})
     name, ok, detail = web_payload_check(data, tmp_path)
     assert not ok and "1 mismatches" in detail
+
+
+def _git(*args) -> str:
+    import subprocess
+
+    from src.validation.data import ROOT
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def test_pre_decision_weights_come_from_main_history():
+    """The 'before' team-context shares are computed with weights read from git: the commit must exist in
+    this branch's history, its weights.py must be the one the Step 4 decision commit (216671e) replaced,
+    and it must hold the old values."""
+    import subprocess
+
+    from src.baseline import weights as current
+    from src.validation.data import ROOT
+
+    commit = before_after.PRE_DECISION_WEIGHTS_COMMIT
+    assert subprocess.run(["git", "merge-base", "--is-ancestor", commit, "HEAD"], cwd=ROOT).returncode == 0, f"{commit} is not in HEAD's history"
+    assert _git("rev-parse", f"{commit}:src/baseline/weights.py") == _git("rev-parse", "216671e^:src/baseline/weights.py")
+    changes = _git("log", "--format=%h", "--reverse", f"{commit}..HEAD", "--", "src/baseline/weights.py").split()
+    assert changes and changes[0].startswith("216671e"), "the next change to weights.py after the commit must be the decision commit"
+
+    old = before_after._old_weights()
+    assert old is not None, f"could not read src/baseline/weights.py at {commit}"
+    assert "fouls_won" in old.STATS and "penalties_scored" not in old.STATS
+    assert old.WEIGHTS["DEF"]["goals_conceded"].weight == -0.80 and current.WEIGHTS["DEF"]["goals_conceded"].weight == -0.40
+    assert old.WEIGHTS["MID"]["clean_sheet"].weight == 0.50 and current.WEIGHTS["MID"]["clean_sheet"].weight == 0.25

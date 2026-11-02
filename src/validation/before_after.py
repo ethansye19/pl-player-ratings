@@ -36,13 +36,20 @@ def load_before(data: Data) -> Data | None:
     return old
 
 
+# The last commit on main with the pre-decision baseline weights: the first parent of the merge
+# (4c4d690) that brought in 216671e ("apply Step 4 weight decisions"). src/baseline/weights.py is
+# identical there and at 216671e^ (9763e4d); its weights reproduce data/processed/before/raw_baseline.parquet
+# from before/baseline_stats.parquet exactly.
+PRE_DECISION_WEIGHTS_COMMIT = "4d7cbc4"
+
+
 def _old_weights():
     """The pre-decision baseline weights, read from git history (for the 'before' contributions)."""
     import subprocess
     import types
     from src.validation.data import ROOT
     try:
-        src = subprocess.run(["git", "show", "5ad8b74:src/baseline/weights.py"], cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", check=True).stdout
+        src = subprocess.run(["git", "show", f"{PRE_DECISION_WEIGHTS_COMMIT}:src/baseline/weights.py"], cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", check=True).stdout
     except Exception:
         return None
     import sys
