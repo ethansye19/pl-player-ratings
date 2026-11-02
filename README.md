@@ -170,8 +170,12 @@ before/after tables, including every player in the five notable matches.
 Every rating can be explained in a few sentences. The explanation is built from **only that
 player's data in that match**: the rating, the raw score, and the five largest positive and
 negative items (stat contributions for the baseline, individual actions for VAEP). A checker
-then confirms that **every number in the text appears in that input**, so an explanation
-cannot quote a stat the player does not have.
+then confirms that **each number in the text appears somewhere in that input**, after
+rounding to at most three decimals and ignoring its sign. That is all it guarantees. It does
+not check that a number is attached to the right stat, so "3 assists" passes whenever a 3
+appears anywhere in the input, and it does not check claims written without digits, such as
+"scored twice". The template provider writes each number next to the stat it came from; text
+from the LLM provider has only the checker's guarantee.
 
 ```powershell
 .venv\Scripts\python -m src.explain.explain --match 3754079 --player 3237 --method both
