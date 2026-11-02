@@ -63,7 +63,7 @@ The latest finished gameweek is the highest `event` with both `finished` and `da
 
 ## Validity checks (run before anything is written)
 
-every team with a fixture has rated players; all 20 teams present; ratings finite, within 3.0-10.0, one decimal; no rated row under 10 minutes; gameweek mean within 6.5 +/- 0.3; no team with more than 11 rated starters in a fixture. If any check fails nothing is written and the CLI exits 1.
+every team with a fixture has rated players (teams without a fixture are not required, so a blank gameweek publishes); each side of every fixture has exactly 11 starters in the FPL data, and every starter with 10+ minutes is rated (the same 11-starters rule `validate_payload` enforces, checked before any payload is built); ratings finite, within 3.0-10.0, one decimal; no rated row under 10 minutes; gameweek mean within 6.5 +/- 0.3. If any check fails nothing is written and the CLI exits 1.
 
 ## Latest run: gameweek 8 (2026/27)
 

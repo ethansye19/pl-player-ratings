@@ -294,11 +294,14 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   (`FPL_STAT_MAP.keys() | UNAVAILABLE_STATS.keys() == set(STATS)`, disjoint);
   `FPL_WEIGHTS: dict[group, dict[stat, Weight]]` using only mapped stats, with the
   adjustments explained in `reports/fpl_mapping.md`.
-- `gameweek.py`: `run_checks(ratings, fixtures, teams) -> list[str]` (empty = pass).
+- `gameweek.py`: `run_checks(ratings, fixtures, teams, appearances=None) -> list[str]` (empty = pass).
   `ratings` is the gameweek frame: contract + `rating`, `team_id`, `is_starter`
-  (`match_id` = FPL fixture id); `fixtures` and `teams` are the FPL API dicts. Checks:
-  all 20 teams present (a failure message names the missing team), every fixture has
-  both teams with their starters rated unless < 10 minutes, ratings finite, within
+  (`match_id` = FPL fixture id); `appearances` is the same frame before the scaler dropped
+  rows under 10 minutes (default: `ratings`); `fixtures` and `teams` are the FPL API dicts.
+  Checks: every team with a fixture has rated players (a failure message names the team;
+  teams without a fixture are not required, so blank gameweeks publish), every fixture has
+  both teams with exactly 11 starters in the FPL data and every starter rated unless
+  < 10 minutes (decision 2026-11-02: no fixed 20-team rule), ratings finite, within
   bounds, one decimal, gameweek mean within 6.5 ± 0.3 (single-gameweek tolerance,
   documented). `run(client, out_dir, gw=None) -> RunResult(gameweek, ok, failures, written)`:
   fits the scaler on all finished gameweeks of the season so far, rates the target

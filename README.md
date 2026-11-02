@@ -186,8 +186,10 @@ totals rather than events, so only the baseline method runs, and only **15 of it
 exist there (`reports/fpl_mapping.md` lists every stat, its FPL field or the reason FPL lacks
 it, and the two weight adjustments this forces). The scaler is fitted on all finished
 gameweeks of the season so far, and the gameweek is published only if every check passes:
-all 20 teams present, every starter rated unless under 10 minutes, ratings finite and in
-range with one decimal, gameweek mean within 6.5 ± 0.3.
+every team with a fixture has rated players, each side of every fixture has 11 starters in
+the FPL data and every starter with 10 or more minutes is rated, ratings are finite and in
+range with one decimal, and the gameweek mean is within 6.5 ± 0.3. Teams without a fixture
+are not required, so a blank gameweek still publishes.
 
 A PowerShell wrapper (`scripts/run_gameweek.ps1`) runs it from Task Scheduler once a day. It
 does nothing when the latest finished gameweek is already published, writes nothing when a

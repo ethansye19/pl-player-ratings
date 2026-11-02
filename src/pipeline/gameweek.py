@@ -183,25 +183,34 @@ def gameweek_frame(gw: int, client: FplClient, bootstrap: dict[str, Any]) -> tup
     return frame, fixtures
 
 
-def run_checks(ratings: pd.DataFrame, fixtures: list[dict[str, Any]], teams: list[dict[str, Any]]) -> list[str]:
-    """Validity checks on a rated gameweek frame; an empty list means pass."""
+def run_checks(
+    ratings: pd.DataFrame,
+    fixtures: list[dict[str, Any]],
+    teams: list[dict[str, Any]],
+    appearances: pd.DataFrame | None = None,
+) -> list[str]:
+    """Validity checks on a rated gameweek frame; an empty list means pass.
+
+    ``ratings`` holds the rated rows (minutes >= 10); ``appearances`` holds every player-fixture
+    with minutes > 0, i.e. the frame before the scaler dropped the short appearances (both need
+    ``match_id, player_id, player_name, team_id, minutes, is_starter``). Without ``appearances``
+    the rated rows are taken to be every appearance.
+
+    Only teams with a fixture in the gameweek are checked, so a blank gameweek (fewer than 20
+    teams playing) can publish. For every fixture, each side must have rated players and exactly
+    11 starters in the FPL data, and every starter with 10+ minutes must be rated. These mirror the
+    11-starters rule of ``validate_payload``, so a missing starter is reported here as a failure
+    instead of raising later while the payloads are built.
+    """
     failures: list[str] = []
     names = {int(t["id"]): t["name"] for t in teams}
     if ratings.empty:
         return ["no rated players"]
+    apps = ratings if appearances is None else appearances
     present = set(int(t) for t in ratings["team_id"].unique())
     playing = {int(f["team_h"]) for f in fixtures} | {int(f["team_a"]) for f in fixtures}
     for team_id in sorted(playing - present):
         failures.append(f"team {names.get(team_id, team_id)} has a fixture but no rated players")
-    missing_entirely = sorted(set(names) - present)
-    if len(missing_entirely) > len(set(names) - playing):
-        for team_id in missing_entirely:
-            if team_id in playing:
-                continue
-            failures.append(f"team {names.get(team_id, team_id)} is missing from the ratings")
-    if len(present) < 20:
-        absent = sorted(set(names) - present)
-        failures.append(f"only {len(present)} of 20 teams have rated players (missing: {', '.join(names.get(t, str(t)) for t in absent)})")
 
     rating = ratings["rating"].to_numpy(dtype="float64")
     if not np.isfinite(rating).all():
@@ -217,16 +226,21 @@ def run_checks(ratings: pd.DataFrame, fixtures: list[dict[str, Any]], teams: lis
             failures.append(f"gameweek mean rating {mean:.2f} is outside {TARGET_MEAN} +/- {GAMEWEEK_MEAN_TOLERANCE}")
     if (ratings["minutes"] < MIN_MINUTES).any():
         failures.append("rated rows with fewer than 10 minutes")
+    rated_keys = set(zip(ratings["match_id"].astype("int64"), ratings["player_id"].astype("int64")))
     for fixture in fixtures:
         fid = int(fixture["id"])
         for team_id in (int(fixture["team_h"]), int(fixture["team_a"])):
+            team = names.get(team_id, team_id)
             part = ratings[(ratings["match_id"] == fid) & (ratings["team_id"] == team_id)]
             if part.empty:
-                failures.append(f"fixture {fid}: {names.get(team_id, team_id)} has no rated players")
+                failures.append(f"fixture {fid}: {team} has no rated players")
                 continue
-            starters = part[part["is_starter"]]
-            if len(starters) > 11:
-                failures.append(f"fixture {fid}: {names.get(team_id, team_id)} has {len(starters)} rated starters")
+            starters = apps[(apps["match_id"] == fid) & (apps["team_id"] == team_id) & apps["is_starter"].astype(bool)]
+            if len(starters) != 11:
+                failures.append(f"fixture {fid}: {team} has {len(starters)} starters in the FPL data (expected 11)")
+            for r in starters.itertuples(index=False):
+                if r.minutes >= MIN_MINUTES and (int(r.match_id), int(r.player_id)) not in rated_keys:
+                    failures.append(f"fixture {fid}: {team} starter {r.player_name} ({r.minutes:.0f} min) is not rated")
     return failures
 
 
@@ -309,7 +323,7 @@ def run(
     unrated = target_rows[target_rows["minutes"] < MIN_MINUTES]
     fixtures = fixtures_by_gw[target]
 
-    failures = run_checks(rated, fixtures, list(teams.values()))
+    failures = run_checks(rated, fixtures, list(teams.values()), appearances=target_rows)
     if published is not None and not allow_regression:
         if target < int(published["gameweek"]):
             failures.append(f"refusing to replace published gameweek {published['gameweek']} with older gameweek {target}")
