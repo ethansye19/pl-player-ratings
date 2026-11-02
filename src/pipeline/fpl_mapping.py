@@ -4,7 +4,7 @@ FPL publishes per-player, per-gameweek totals (``/api/event/<gw>/live/``) and no
 data, so only a subset of the 35 baseline stats exists. ``FPL_STAT_MAP`` names the FPL
 field for each baseline stat that has one; ``UNAVAILABLE_STATS`` explains every stat that
 does not. ``FPL_WEIGHTS`` is the baseline weight table restricted to the mapped stats,
-with three documented adjustments (see ``reports/fpl_mapping.md``):
+with two documented adjustments (see ``reports/fpl_mapping.md``):
 
 1. ``goals`` <- ``goals_scored`` includes penalties, and FPL has no penalties-scored field,
    so the goal weight is blended towards the 1.25 penalty weight using the 2015/16 share
@@ -14,9 +14,10 @@ with three documented adjustments (see ``reports/fpl_mapping.md``):
    it carries the count-weighted mean of their three weights measured on 2015/16:
    GK 0.06, DEF 0.15, MID 0.15, FWD 0.09; ``blocks`` and ``interceptions`` are then
    marked unavailable (they are inside that field, not lost).
-3. Everything else keeps its baseline weight. Stats that FPL lacks simply drop out; the
-   percentile scaler re-anchors each group at 6.5, so the loss is resolution (fewer
-   distinct raw scores), not bias.
+
+Every other mapped stat keeps its baseline weight. Stats that FPL lacks simply drop out;
+the percentile scaler re-anchors each group at 6.5, so the loss is resolution (fewer
+distinct raw scores), not bias.
 
 Positions come from FPL ``element_type`` (1 GK, 2 DEF, 3 MID, 4 FWD). FPL's MID/FWD
 split follows the game's classification, not the formation, so wingers are often MID.

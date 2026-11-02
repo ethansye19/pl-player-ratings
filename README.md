@@ -277,6 +277,12 @@ py -3.11 -m venv .venv
 Reproduce the 2015/16 ratings from scratch (the download is about 1.1 GB; VAEP training
 takes a few minutes):
 
+> **Memory:** `src.vaep.train` needs about 6.2 GB of RAM for itself (measured peak with the
+> cached features: 5.5 GiB resident, 6.2 GiB committed), because it holds all 757,641 game
+> states in memory and copies each model's training set. Run it with at least 8 GB free; on a
+> machine with 7 GB of RAM it was killed for running out of memory. The other steps need far
+> less.
+
 ```powershell
 .venv\Scripts\python -m src.ingest.download               # StatsBomb open data -> data/raw/statsbomb
 .venv\Scripts\python -m src.ingest.build                  # -> data/processed/*.parquet, reports/ingest.md
