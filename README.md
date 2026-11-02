@@ -133,13 +133,30 @@ baseline rating in VAEP mode. The verifier then re-ran on the new outputs:
 | baseline 10–20 minute cameos: mean / share below 6.0 | 6.01 / 43% | 5.85 / 65% |
 
 The two methods now agree more and both are more stable from one half of the season to the
-other, while defenders' ratings depend less on the result. Two things got worse and are
-documented rather than hidden: VAEP's split-half stability for defenders fell (0.44 to 0.29)
-because xG labels moved value from the shot to the build-up, and short baseline cameos
-drifted down once the team-context terms that used to prop them up were halved. A converted
-penalty is still worth slightly less than nothing to the taker under VAEP, because the models
-under-predict the 91 penalty states in the data. Section 7 of `reports/validation.md` has the
-full before/after tables, including every player in the five notable matches.
+other, while defenders' ratings depend less on the result. Several things got worse, and they
+are documented rather than hidden:
+
+- **Under VAEP, goals barely count.** With shots valued by xG, an open-play goal is worth
+  +0.120 to the shooter on average and a miss +0.020, so scoring adds about 0.1. Agüero's five
+  goals against Newcastle rate 8.9 under VAEP (10.0 under the baseline), and 95 of the 870
+  rated appearances with a goal rate below 6.0 under VAEP (3 under the baseline).
+- **VAEP's credit for defending is close to a lottery.** The defending team's first action
+  after an opponent's missed shot inherits the whole chance. Steve Cook's single clearance
+  after a missed penalty is worth +0.50, 58% of his match total, and makes him a 9.9
+  (baseline 6.6). One tackle that ends a dangerous dribble can do the same: Patrick van
+  Aanholt rates 9.8 in a 0-2 home defeat (baseline 6.0). Defenders' VAEP split-half
+  stability fell from 0.44 to 0.29.
+- **Under VAEP, a penalty costs the taker whether it goes in or not.** A converted penalty is
+  worth -0.112 to the taker on average and a missed one -0.298, because the models
+  under-predict the 91 penalty states. The 71 rated penalty scorers average 6.28 under VAEP
+  (7.51 under the baseline), and 45 of them rate below the 6.5 average.
+- **Short baseline cameos drifted down** once the team-context terms that used to prop them
+  up were halved: 10–20 minute appearances average 5.85 (was 6.01), and 65% of them are below
+  6.0 (was 43%).
+
+None of the VAEP problems is fixed yet. The candidate fixes change ratings, so they are waiting
+for a decision; section 6 of `reports/validation.md` describes them. Section 7 has the full
+before/after tables, including every player in the five notable matches.
 
 ## Why this rating?
 
