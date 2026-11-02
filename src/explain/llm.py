@@ -86,6 +86,40 @@ RESULT_WORDS = {"success": "successful", "fail": "unsuccessful", "offside": "off
                 "yellow_card": "yellow-card", "red_card": "red-card"}
 
 
+# Same lists and rules as shortName() in web/app.js (tests/test_explain_names.py keeps them in sync).
+NAME_PARTICLES = ("van", "von", "de", "di", "da", "do", "dos", "das", "del", "della", "der", "den",
+                  "ter", "ten", "la", "le", "el", "al", "bin", "ibn")
+NAME_SUFFIXES = ("jr", "jr.", "sr", "sr.", "ii", "iii", "iv")
+
+
+def short_name(full_name: str | None) -> str:
+    """The surname the page shows: 'Kevin De Bruyne' -> 'De Bruyne', 'David de Gea' -> 'de Gea'.
+
+    A port of ``shortName`` in ``web/app.js``: drop trailing suffixes (Jr., III), take the last
+    word, keep a preceding number word ("Home 4"), and pull in any particles in front of it
+    (van, de, do, ...; case-insensitive), but never the first name.
+    """
+    parts = str("" if full_name is None else full_name).split()
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0]
+    end = len(parts)
+    while end > 1 and parts[end - 1].lower() in NAME_SUFFIXES:
+        end -= 1
+    start = end - 1
+    if parts[start].isdigit() and start > 0:
+        start -= 1
+    while start > 1 and parts[start - 1].lower() in NAME_PARTICLES:
+        start -= 1
+    return " ".join(parts[start:end])
+
+
+def _sentence_start(name: str) -> str:
+    """Capitalise a name that opens a sentence ('de Gea' -> 'De Gea')."""
+    return name[:1].upper() + name[1:]
+
+
 def _count_phrase(item: dict[str, Any]) -> str:
     if item["stat"] in FLOAT_STATS:
         return f"{item['label']} of {item['count']:.2f}"
@@ -131,7 +165,7 @@ class TemplateProvider:
                 f"{who} rated {data['rating']:.1f} with the {method} method in {score}, "
                 f"playing {data['minutes']:.1f} minutes."
             )
-        surname = data["player_name"].split()[-1]
+        surname = _sentence_start(short_name(data["player_name"]))
         top_pos, top_neg = data["top_positive"][:3], data["top_negative"][:2]
         if data["method"] == "baseline":
             pos = [f"{_count_phrase(i)} ({i['value']:+.2f})" for i in top_pos]

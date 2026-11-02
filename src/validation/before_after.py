@@ -36,13 +36,20 @@ def load_before(data: Data) -> Data | None:
     return old
 
 
+# The last commit on main with the pre-decision baseline weights: the first parent of the merge
+# (4c4d690) that brought in 216671e ("apply Step 4 weight decisions"). src/baseline/weights.py is
+# identical there and at 216671e^ (9763e4d); its weights reproduce data/processed/before/raw_baseline.parquet
+# from before/baseline_stats.parquet exactly.
+PRE_DECISION_WEIGHTS_COMMIT = "4d7cbc4"
+
+
 def _old_weights():
     """The pre-decision baseline weights, read from git history (for the 'before' contributions)."""
     import subprocess
     import types
     from src.validation.data import ROOT
     try:
-        src = subprocess.run(["git", "show", "5ad8b74:src/baseline/weights.py"], cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", check=True).stdout
+        src = subprocess.run(["git", "show", f"{PRE_DECISION_WEIGHTS_COMMIT}:src/baseline/weights.py"], cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", check=True).stdout
     except Exception:
         return None
     import sys
@@ -252,53 +259,78 @@ def role_means(d: Data) -> pd.DataFrame:
     return full.groupby(["position_group", "role"]).agg(n=("rating_b", "size"), baseline=("rating_b", "mean"), vaep=("rating_v", "mean"))
 
 
+def sub_stats(d: Data) -> dict:
+    """Short substitutes in one set of outputs: 10-20 minute baseline cameos and where their raw score sits in the group."""
+    r = d.ratings["baseline"]
+    cameo = r[(r["minutes"] >= 10) & (r["minutes"] < 20)]
+    res = {"n": len(cameo), "mean": float(cameo["rating"].mean()), "below6": float((cameo["rating"] < 6).mean()), "median_raw": float(cameo["raw_score"].median())}
+    for g in POSITION_GROUPS:
+        part = r[r["position_group"] == g]
+        c = cameo[cameo["position_group"] == g]
+        med = float(c["raw_score"].median()) if len(c) else float("nan")
+        res[f"cameo_n_{g}"] = len(c)
+        res[f"cameo_mean_{g}"] = float(c["rating"].mean()) if len(c) else float("nan")
+        res[f"cameo_median_raw_{g}"] = med
+        res[f"cameo_pct_{g}"] = float((part["raw_score"] < med).mean() + 0.5 * (part["raw_score"] == med).mean())
+        res[f"share_neg_{g}"] = float((part["raw_score"] < 0).mean())
+        res[f"share_neg_starters_{g}"] = float((part.loc[part["minutes"] >= 60, "raw_score"] < 0).mean())
+        res[f"p25_{g}"] = float(part["raw_score"].quantile(0.25))
+        res[f"p30_{g}"] = float(part["raw_score"].quantile(0.30))
+    return res
+
+
 def sub_analysis(data: Data, old: Data) -> dict:
     """Why short substitutes moved: raw-score percentile of a zero raw score per group, before and after."""
-    out = {}
-    for label, d in (("before", old), ("after", data)):
-        r = d.ratings["baseline"]
-        cameo = r[(r["minutes"] >= 10) & (r["minutes"] < 20)]
-        res = {"n": len(cameo), "mean": float(cameo["rating"].mean()), "below6": float((cameo["rating"] < 6).mean()), "median_raw": float(cameo["raw_score"].median())}
-        for g in POSITION_GROUPS:
-            part = r[r["position_group"] == g]
-            c = cameo[cameo["position_group"] == g]
-            med = float(c["raw_score"].median()) if len(c) else float("nan")
-            res[f"cameo_n_{g}"] = len(c)
-            res[f"cameo_mean_{g}"] = float(c["rating"].mean()) if len(c) else float("nan")
-            res[f"cameo_median_raw_{g}"] = med
-            res[f"cameo_pct_{g}"] = float((part["raw_score"] < med).mean() + 0.5 * (part["raw_score"] == med).mean())
-            res[f"share_neg_{g}"] = float((part["raw_score"] < 0).mean())
-            res[f"share_neg_starters_{g}"] = float((part.loc[part["minutes"] >= 60, "raw_score"] < 0).mean())
-            res[f"p25_{g}"] = float(part["raw_score"].quantile(0.25))
-            res[f"p30_{g}"] = float(part["raw_score"].quantile(0.30))
-        out[label] = res
-    return out
+    return {"before": sub_stats(old), "after": sub_stats(data)}
 
 
-def compute(data: Data) -> dict | None:
+def vaep_sign(d: Data) -> dict:
+    """Share of rated appearances with a non-positive VAEP sum, per group."""
+    r = d.ratings["vaep"]
+    return {g: float((r.loc[r["position_group"] == g, "raw_score"] <= 0).mean()) for g in POSITION_GROUPS}
+
+
+def compute_current(data: Data) -> dict:
+    """The quantities sections 6 and 7 need from the CURRENT outputs only. Needs no before/ snapshot."""
+    from src.baseline import weights as new_w
+    return {
+        "shots": shot_values(data),
+        "events": event_means(data),
+        "result": result_dependence(data),
+        "roles": role_means(data),
+        "subs": sub_stats(data),
+        "vaep_sign": vaep_sign(data),
+        "team_context": team_context_share(data, new_w),
+        "penalty_states": penalty_states(data),
+    }
+
+
+def compute(data: Data, current: dict | None = None) -> dict | None:
+    """Before/after comparison, or None when ``data/processed/before/`` is absent.
+
+    ``current`` is :func:`compute_current` of ``data``; it is computed here when not given.
+    """
     old = load_before(data)
     if old is None:
         return None
+    cur = current if current is not None else compute_current(data)
     old_w = _old_weights()
-    from src.baseline import weights as new_w
     out = {"old": old}
     out["matches"] = {mid: match_side_by_side(data, old, mid) for mid in (3754013, 3754290, 3754275, 3754079, 3754092)}
     out["top20"] = {m: top20_before_after(data, old, m) for m in ("baseline", "vaep")}
     out["disagree"] = {"before": disagreements(old), "after": disagreements(data)}
     out["agree"] = {"before": agreement(old), "after": agreement(data)}
     out["old_vs_new"] = old_vs_new(data, old)
-    out["team_context"] = {"before": team_context_share(old, old_w) if old_w else None, "after": team_context_share(data, new_w)}
-    out["shots"] = {"before": shot_values(old), "after": shot_values(data)}
-    out["penalty_states"] = penalty_states(data)
+    out["team_context"] = {"before": team_context_share(old, old_w) if old_w else None, "after": cur["team_context"]}
+    out["shots"] = {"before": shot_values(old), "after": cur["shots"]}
+    out["penalty_states"] = cur["penalty_states"]
     out["buckets"] = {"before": minutes_buckets(old), "after": minutes_buckets(data)}
     out["stability"] = {"before": stability(old), "after": stability(data)}
-    out["events"] = {"before": event_means(old), "after": event_means(data)}
-    out["result"] = {"before": result_dependence(old), "after": result_dependence(data)}
-    out["roles"] = {"before": role_means(old), "after": role_means(data)}
-    out["subs"] = sub_analysis(data, old)
-    for label, d in (("before", old), ("after", data)):
-        r = d.ratings["vaep"]
-        out.setdefault("vaep_sign", {})[label] = {g: float((r.loc[r["position_group"] == g, "raw_score"] <= 0).mean()) for g in POSITION_GROUPS}
+    out["events"] = {"before": event_means(old), "after": cur["events"]}
+    out["result"] = {"before": result_dependence(old), "after": cur["result"]}
+    out["roles"] = {"before": role_means(old), "after": cur["roles"]}
+    out["subs"] = {"before": sub_stats(old), "after": cur["subs"]}
+    out["vaep_sign"] = {"before": vaep_sign(old), "after": cur["vaep_sign"]}
     return out
 
 
@@ -307,6 +339,8 @@ if __name__ == "__main__":
     pd.set_option("display.width", 250)
     data = load()
     res = compute(data)
+    if res is None:
+        raise SystemExit(f"{BEFORE} is not present: nothing to compare")
     print("agree", res["agree"])
     print("old_vs_new", res["old_vs_new"])
     print("team_context", res["team_context"])

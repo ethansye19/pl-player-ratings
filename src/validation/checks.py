@@ -16,7 +16,6 @@ from src.contract import CONTRACT_COLUMNS, MAX_SHARE_OF_TENS, MEAN_TOLERANCE, MI
 from src.ingest.positions import POSITION_GROUP_BY_ID, POSITION_NAMES
 from src.validation.data import METHODS, PROCESSED, RAW, ROOT, WEB_DATA, Data
 
-EXPECTED_FAILING_FILES = ("tests/test_explain.py", "tests/test_pipeline.py")  # steps not built yet
 ROLE_OF_POSITION = {
     1: "GK", 2: "FB", 6: "FB", 7: "WB", 8: "WB", 3: "CB", 4: "CB", 5: "CB",
     9: "DM", 10: "DM", 11: "DM", 12: "WM", 16: "WM", 13: "CM", 14: "CM", 15: "CM",
@@ -29,6 +28,7 @@ ROLE_LABELS = {"GK": "goalkeeper", "FB": "full-back", "WB": "wing-back", "CB": "
 
 # ----------------------------------------------------------------------------- 1. tests
 def run_test_suite(timeout: int = 1800) -> dict:
+    """Run the whole pytest suite. Every failing or erroring test is a real failure: all six steps are built."""
     cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-W", "ignore::DeprecationWarning"]
     started = time.time()
     proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
@@ -38,11 +38,20 @@ def run_test_suite(timeout: int = 1800) -> dict:
         if re.search(r"\d+ (passed|failed)", line):
             summary = line.strip("= ").strip()
             break
-    failed = sorted({m.group(1) for m in re.finditer(r"^(?:FAILED|ERROR) (tests/[^\s:]+::[^\s]+)", out, flags=re.M)})
-    expected = [f for f in failed if f.split("::")[0] in EXPECTED_FAILING_FILES]
-    unexpected = [f for f in failed if f.split("::")[0] not in EXPECTED_FAILING_FILES]
     return {"command": " ".join(cmd[1:]), "summary": summary, "returncode": proc.returncode, "seconds": round(time.time() - started, 1),
-            "failed": failed, "expected_failures": expected, "unexpected_failures": unexpected}
+            "failed": parse_failures(out, proc.returncode)}
+
+
+def parse_failures(output: str, returncode: int) -> list[str]:
+    """Failing and erroring tests from pytest's short summary (``-ra``), sorted.
+
+    A non-zero exit without any FAILED/ERROR line (a collection or usage error) is reported as a
+    failure too, so a broken run can never look like a clean one.
+    """
+    failed = sorted({m.group(1) for m in re.finditer(r"^(?:FAILED|ERROR) (tests/\S+)", output, flags=re.M)})
+    if returncode != 0 and not failed:
+        failed = [f"pytest exited with code {returncode} and reported no individual test"]
+    return failed
 
 
 # ------------------------------------------------------------------ 1. distribution rules
@@ -121,30 +130,48 @@ def consistency_checks(data: Data) -> list[tuple[str, bool, str]]:
     checks.append(("raw_vaep = sum of the player's action values", diff < 1e-9, f"max |diff| {diff:.1e}; (game, player) pairs with actions but no lineup row: {len(sums.index.difference(keyed.index))}"))
     hold = pd.read_parquet(PROCESSED / "raw_vaep_holdout.parquet")
     checks.append(("raw_vaep_holdout covers exactly the holdout score matches", set(hold["match_id"]) == set(sp["holdout"]["score"]), f"{len(hold)} rows"))
-    # web export: every exported rating equals the parquet rating; position_group and minutes equal the lineups
-    index_path = WEB_DATA / "index.json"
-    if index_path.exists():
-        entries = json.loads(index_path.read_text(encoding="utf-8"))
-        lu = data.lineups.set_index(["match_id", "player_id"])
-        rated = {m: data.ratings[m].set_index(["match_id", "player_id"])["rating"] for m in METHODS}
-        n = bad = 0
-        for e in entries:
-            payload = json.loads((WEB_DATA / e["path"]).read_text(encoding="utf-8"))
-            mid = payload["match_id"]
-            for p in payload["players"]:
-                n += 1
-                key = (mid, p["player_id"])
-                ok = p["position_group"] == lu.loc[key, "position_group"] and abs(p["minutes"] - lu.loc[key, "minutes"]) < 1e-9
-                for m in METHODS:
-                    if p["minutes"] >= MIN_MINUTES:
-                        ok = ok and p["ratings"][m] == float(rated[m].loc[key])
-                    else:
-                        ok = ok and p["ratings"][m] is None
-                bad += int(not ok)
-        checks.append(("web/data payloads: rating null iff < 10 minutes, ratings and position_group equal the parquet files", bad == 0, f"{len(entries)} matches, {n} player rows, {bad} mismatches"))
-    else:
-        checks.append(("web/data payloads", False, "web/data/index.json not found (run python -m src.pipeline.export_web)"))
+    checks.append(web_payload_check(data))
     return checks
+
+
+def web_payload_check(data: Data, web_data=WEB_DATA) -> tuple[str, bool, str]:
+    """Every exported 2015/16 rating equals the parquet rating; position_group and minutes equal the lineups.
+
+    ``web/data/index.json`` also lists current-season FPL fixtures once the gameweek pipeline has run
+    (``merge_site_index``); those are not StatsBomb matches, so they are counted and skipped here.
+    """
+    from src.pipeline.export_web import SEASON
+
+    name = "web/data payloads: rating null iff < 10 minutes, ratings and position_group equal the parquet files"
+    index_path = web_data / "index.json"
+    if not index_path.exists():
+        return ("web/data payloads", False, "web/data/index.json not found (run python -m src.pipeline.export_web)")
+    entries = json.loads(index_path.read_text(encoding="utf-8"))
+    ours = [e for e in entries if e.get("season") == SEASON]
+    other = len(entries) - len(ours)
+    lu = data.lineups.set_index(["match_id", "player_id"])
+    rated = {m: data.ratings[m].set_index(["match_id", "player_id"])["rating"] for m in METHODS}
+    n = bad = 0
+    for e in ours:
+        payload = json.loads((web_data / e["path"]).read_text(encoding="utf-8"))
+        mid = payload["match_id"]
+        for p in payload["players"]:
+            n += 1
+            key = (mid, p["player_id"])
+            if key not in lu.index:
+                bad += 1
+                continue
+            ok = p["position_group"] == lu.loc[key, "position_group"] and abs(p["minutes"] - lu.loc[key, "minutes"]) < 1e-9
+            for m in METHODS:
+                if p["minutes"] >= MIN_MINUTES:
+                    ok = ok and key in rated[m].index and p["ratings"][m] == float(rated[m].loc[key])
+                else:
+                    ok = ok and p["ratings"][m] is None
+            bad += int(not ok)
+    detail = f"{len(ours)} matches, {n} player rows, {bad} mismatches"
+    if other:
+        detail += f"; {other} index entries from other seasons (current-season FPL output) not compared"
+    return (name, bad == 0 and len(ours) > 0, detail)
 
 
 # ---------------------------------------------------------------------------- 1. isolation

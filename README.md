@@ -81,8 +81,8 @@ Two choices matter for the results:
 - **Shots are valued by chance quality, not outcome.** The training labels are built from
   StatsBomb's expected goals (the probability that at least one chance in the window is
   converted) instead of whether a goal was scored. A goal is worth the chance it came from
-  rather than a flat +0.8, a missed penalty is no longer a catastrophe, and goalkeepers and
-  blockers are credited with the chances they stop. `reports/vaep_splits.md` documents the
+  rather than a flat +0.8, a missed penalty is no longer a catastrophe, and a goalkeeper's
+  save is credited with the chance it stops. `reports/vaep_splits.md` documents the
   formula and its effects.
 - **No match is scored by a model that saw it.** A chronological holdout (train matchweeks
   1–19, score 20–38) and 5-fold cross-fitting over the whole season are both recorded with
@@ -90,11 +90,18 @@ Two choices matter for the results:
   its model's training set. Held-out AUC is about 0.81 for both the scoring and the
   conceding model.
 
-VAEP sees only on-the-ball actions, so it undervalues defensive work: clearances, aerial
-duels, blocks and clean sheets carry little or no value, and a goalkeeper's saves are not
-actions of the keeper in the SPADL representation. The page therefore shows goalkeepers'
-baseline ratings in VAEP mode (marked "B"), and VAEP ratings for defenders are best read as
-attacking contribution.
+VAEP values on-the-ball actions only, and since the switch to xG labels its credit for
+defending is uneven. A goalkeeper's saves are SPADL actions (`keeper_save`) and earn +0.085
+each on average, 187 of the 273 VAEP points goalkeepers collect over the season. Nothing
+charges a keeper for goals conceded, though: the VAEP keeper rating is unrelated to the result
+(Spearman -0.06 with goal difference) and barely repeats from one half of the season to the
+other (0.22). For defenders, a typical clearance or tackle is worth about zero, but the first
+defending action after an opponent's missed shot inherits the shot's whole chance, so a single
+clearance can be worth +0.50 and decide a defender's rating. Results, clean sheets and cards
+barely register (defenders' VAEP rating has Spearman +0.06 with goal difference, and players
+who were sent off average 6.00). The page therefore shows goalkeepers' baseline ratings in VAEP
+mode (marked "B"), and VAEP ratings for defenders should not be relied on until that credit is
+fixed (`reports/validation.md`, section 6, concerns A and C).
 
 ### From raw score to rating
 
@@ -133,21 +140,42 @@ baseline rating in VAEP mode. The verifier then re-ran on the new outputs:
 | baseline 10–20 minute cameos: mean / share below 6.0 | 6.01 / 43% | 5.85 / 65% |
 
 The two methods now agree more and both are more stable from one half of the season to the
-other, while defenders' ratings depend less on the result. Two things got worse and are
-documented rather than hidden: VAEP's split-half stability for defenders fell (0.44 to 0.29)
-because xG labels moved value from the shot to the build-up, and short baseline cameos
-drifted down once the team-context terms that used to prop them up were halved. A converted
-penalty is still worth slightly less than nothing to the taker under VAEP, because the models
-under-predict the 91 penalty states in the data. Section 7 of `reports/validation.md` has the
-full before/after tables, including every player in the five notable matches.
+other, while defenders' ratings depend less on the result. Several things got worse, and they
+are documented rather than hidden:
+
+- **Under VAEP, goals barely count.** With shots valued by xG, an open-play goal is worth
+  +0.120 to the shooter on average and a miss +0.020, so scoring adds about 0.1. Agüero's five
+  goals against Newcastle rate 8.9 under VAEP (10.0 under the baseline), and 95 of the 870
+  rated appearances with a goal rate below 6.0 under VAEP (3 under the baseline).
+- **VAEP's credit for defending is close to a lottery.** The defending team's first action
+  after an opponent's missed shot inherits the whole chance. Steve Cook's single clearance
+  after a missed penalty is worth +0.50, 58% of his match total, and makes him a 9.9
+  (baseline 6.6). One tackle that ends a dangerous dribble can do the same: Patrick van
+  Aanholt rates 9.8 in a 0-2 home defeat (baseline 6.0). Defenders' VAEP split-half
+  stability fell from 0.44 to 0.29.
+- **Under VAEP, a penalty costs the taker whether it goes in or not.** A converted penalty is
+  worth -0.112 to the taker on average and a missed one -0.298, because the models
+  under-predict the 91 penalty states. The 71 rated penalty scorers average 6.28 under VAEP
+  (7.51 under the baseline), and 45 of them rate below the 6.5 average.
+- **Short baseline cameos drifted down** once the team-context terms that used to prop them
+  up were halved: 10–20 minute appearances average 5.85 (was 6.01), and 65% of them are below
+  6.0 (was 43%).
+
+None of the VAEP problems is fixed yet. The candidate fixes change ratings, so they are waiting
+for a decision; section 6 of `reports/validation.md` describes them. Section 7 has the full
+before/after tables, including every player in the five notable matches.
 
 ## Why this rating?
 
 Every rating can be explained in a few sentences. The explanation is built from **only that
 player's data in that match**: the rating, the raw score, and the five largest positive and
 negative items (stat contributions for the baseline, individual actions for VAEP). A checker
-then confirms that **every number in the text appears in that input**, so an explanation
-cannot quote a stat the player does not have.
+then confirms that **each number in the text appears somewhere in that input**, after
+rounding to at most three decimals and ignoring its sign. That is all it guarantees. It does
+not check that a number is attached to the right stat, so "3 assists" passes whenever a 3
+appears anywhere in the input, and it does not check claims written without digits, such as
+"scored twice". The template provider writes each number next to the stat it came from; text
+from the LLM provider has only the checker's guarantee.
 
 ```powershell
 .venv\Scripts\python -m src.explain.explain --match 3754079 --player 3237 --method both
@@ -186,8 +214,10 @@ totals rather than events, so only the baseline method runs, and only **15 of it
 exist there (`reports/fpl_mapping.md` lists every stat, its FPL field or the reason FPL lacks
 it, and the two weight adjustments this forces). The scaler is fitted on all finished
 gameweeks of the season so far, and the gameweek is published only if every check passes:
-all 20 teams present, every starter rated unless under 10 minutes, ratings finite and in
-range with one decimal, gameweek mean within 6.5 ± 0.3.
+every team with a fixture has rated players, each side of every fixture has 11 starters in
+the FPL data and every starter with 10 or more minutes is rated, ratings are finite and in
+range with one decimal, and the gameweek mean is within 6.5 ± 0.3. Teams without a fixture
+are not required, so a blank gameweek still publishes.
 
 A PowerShell wrapper (`scripts/run_gameweek.ps1`) runs it from Task Scheduler once a day. It
 does nothing when the latest finished gameweek is already published, writes nothing when a
@@ -206,8 +236,9 @@ local only: the public page carries the 2015/16 season.
 - Only the baseline method runs on the current season: VAEP needs event data.
 - FPL positions follow the game's classification (wingers are usually MID), and FPL
   player names are short display names.
-- VAEP undervalues defensive work (see the caveat above); goalkeepers are shown
-  with their baseline rating in VAEP mode.
+- VAEP's credit for defending is unreliable (see the caveat above): it ignores goals
+  conceded and can hand one clearance a whole missed chance. Goalkeepers are shown with
+  their baseline rating in VAEP mode.
 - Explanations default to the template provider. The Anthropic provider is wired up
   behind `RATING_LLM_PROVIDER=anthropic` but has not been used or tested with a key.
 - Ratings are percentile-anchored within each season: a 7.0 in 2015/16 and a 7.0 in the
@@ -245,6 +276,12 @@ py -3.11 -m venv .venv
 
 Reproduce the 2015/16 ratings from scratch (the download is about 1.1 GB; VAEP training
 takes a few minutes):
+
+> **Memory:** `src.vaep.train` needs about 6.6 GB of RAM for itself (measured peak with the
+> cached features: 5.5 GiB resident, 6.2 GiB committed), because it holds all 757,641 game
+> states in memory and copies each model's training set. Run it with at least 8 GB free; on a
+> machine with 7 GB of RAM it was killed for running out of memory. The other steps need far
+> less.
 
 ```powershell
 .venv\Scripts\python -m src.ingest.download               # StatsBomb open data -> data/raw/statsbomb
