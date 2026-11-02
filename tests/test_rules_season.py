@@ -51,7 +51,7 @@ def test_each_position_group_is_anchored_separately(season_ratings):
     means = season_ratings.groupby("position_group")["rating"].mean()
     assert set(means.index) == set(POSITION_GROUPS)
     for group, mean in means.items():
-        assert abs(mean - TARGET_MEAN) <= 0.15, f"{group} mean {mean:.3f}"
+        assert abs(mean - TARGET_MEAN) <= MEAN_TOLERANCE, f"{group} mean {mean:.3f}"
 
 
 def test_tens_are_extremely_rare(season_ratings):
