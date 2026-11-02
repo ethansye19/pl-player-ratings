@@ -16,7 +16,6 @@ from src.contract import CONTRACT_COLUMNS, MAX_SHARE_OF_TENS, MEAN_TOLERANCE, MI
 from src.ingest.positions import POSITION_GROUP_BY_ID, POSITION_NAMES
 from src.validation.data import METHODS, PROCESSED, RAW, ROOT, WEB_DATA, Data
 
-EXPECTED_FAILING_FILES = ("tests/test_explain.py", "tests/test_pipeline.py")  # steps not built yet
 ROLE_OF_POSITION = {
     1: "GK", 2: "FB", 6: "FB", 7: "WB", 8: "WB", 3: "CB", 4: "CB", 5: "CB",
     9: "DM", 10: "DM", 11: "DM", 12: "WM", 16: "WM", 13: "CM", 14: "CM", 15: "CM",
@@ -29,6 +28,7 @@ ROLE_LABELS = {"GK": "goalkeeper", "FB": "full-back", "WB": "wing-back", "CB": "
 
 # ----------------------------------------------------------------------------- 1. tests
 def run_test_suite(timeout: int = 1800) -> dict:
+    """Run the whole pytest suite. Every failing or erroring test is a real failure: all six steps are built."""
     cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-W", "ignore::DeprecationWarning"]
     started = time.time()
     proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
@@ -38,11 +38,20 @@ def run_test_suite(timeout: int = 1800) -> dict:
         if re.search(r"\d+ (passed|failed)", line):
             summary = line.strip("= ").strip()
             break
-    failed = sorted({m.group(1) for m in re.finditer(r"^(?:FAILED|ERROR) (tests/[^\s:]+::[^\s]+)", out, flags=re.M)})
-    expected = [f for f in failed if f.split("::")[0] in EXPECTED_FAILING_FILES]
-    unexpected = [f for f in failed if f.split("::")[0] not in EXPECTED_FAILING_FILES]
     return {"command": " ".join(cmd[1:]), "summary": summary, "returncode": proc.returncode, "seconds": round(time.time() - started, 1),
-            "failed": failed, "expected_failures": expected, "unexpected_failures": unexpected}
+            "failed": parse_failures(out, proc.returncode)}
+
+
+def parse_failures(output: str, returncode: int) -> list[str]:
+    """Failing and erroring tests from pytest's short summary (``-ra``), sorted.
+
+    A non-zero exit without any FAILED/ERROR line (a collection or usage error) is reported as a
+    failure too, so a broken run can never look like a clean one.
+    """
+    failed = sorted({m.group(1) for m in re.finditer(r"^(?:FAILED|ERROR) (tests/\S+)", output, flags=re.M)})
+    if returncode != 0 and not failed:
+        failed = [f"pytest exited with code {returncode} and reported no individual test"]
+    return failed
 
 
 # ------------------------------------------------------------------ 1. distribution rules

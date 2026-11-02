@@ -55,14 +55,10 @@ def section_tests(res: dict | None) -> list[str]:
         out += ["Skipped (`--skip-tests`).", ""]
         return out
     out += [f"Command: `python {res['command']}` (repo root, {res['seconds']} s).", "", f"**Result: `{res['summary']}`**", ""]
-    if res["expected_failures"]:
-        out += [f"Expected failures ({len(res['expected_failures'])}): the explanation feature (`src/explain`) and the FPL pipeline (`src/pipeline/fpl*`, `gameweek`) are Steps 5 and 6 and have not been built; "
-                "their tests fail on import (`import_or_fail`), not on behaviour:", ""]
-        out += [f"- `{f}`" for f in res["expected_failures"]] + [""]
-    if res["unexpected_failures"]:
-        out += [f"**Unexpected failures ({len(res['unexpected_failures'])}) - real findings:**", ""] + [f"- `{f}`" for f in res["unexpected_failures"]] + [""]
+    if res["failed"]:
+        out += [f"**Failures ({len(res['failed'])}) - real findings, listed again in section 6 (i):**", ""] + [f"- `{f}`" for f in res["failed"]] + [""]
     else:
-        out += ["Unexpected failures: **none**. Every test outside `tests/test_explain.py` and `tests/test_pipeline.py` passes.", ""]
+        out += ["Failures: **none**. Every test in the suite passes, including the explanation (Step 5) and FPL pipeline (Step 6) tests.", ""]
     return out
 
 
@@ -460,7 +456,7 @@ def section_findings(rules: dict, cons: list, iso_rows: list, tests: dict | None
                      ba: dict | None, cur: dict) -> list[str]:
     """Section 6. ``cur`` is ``before_after.compute_current(data)``; ``ba`` is None without the before/ snapshot."""
     all_rules_pass = all(ok for m in METHODS for _, ok, _ in rules[m]["checks"]) and all(ok for _, ok, _ in cons) and all(r[4] == "yes" and r[7] == "yes" for r in iso_rows)
-    unexpected = tests["unexpected_failures"] if tests else []
+    failed_tests = tests["failed"] if tests else []
     tc = {g: s for g, s, *_ in comp["team_context"]}
     role = pos["role"].set_index(["position_group", "role"])
     ev = {e[0]: e for e in comp["events"]}
@@ -469,13 +465,13 @@ def section_findings(rules: dict, cons: list, iso_rows: list, tests: dict | None
     pv = comp["penalty_values"]
 
     out = ["## 6. Findings and recommendations", "", "### (i) Bugs or rule violations on the current outputs - must fix", ""]
-    if all_rules_pass and not unexpected:
+    if all_rules_pass and not failed_tests:
         out += ["**None found.** All distribution rules hold for both methods on the regenerated files (1.1), rating one match alone through the public functions and the refit scalers reproduces the "
-                "season files exactly (1.2), the VAEP splits are unchanged and leak-free, `raw_vaep` equals the summed action values, the web payloads equal the parquet files (1.3), and the only failing "
-                "tests are the import failures of the unbuilt Steps 5 and 6. No code outside `src/validation` was changed by the verifier.", ""]
+                "season files exactly (1.2), the VAEP splits are unchanged and leak-free, `raw_vaep` equals the summed action values, the web payloads equal the parquet files (1.3), and "
+                + ("the whole test suite passes (1)." if tests else "the test suite was not run (`--skip-tests`).") + " No code outside `src/validation` was changed by the verifier.", ""]
     else:
         out += ["The following checks failed and need investigation:", ""]
-        out += [f"- test: `{f}`" for f in unexpected]
+        out += [f"- test: `{f}`" for f in failed_tests]
         out += [f"- {m}: {name} ({detail})" for m in METHODS for name, ok, detail in rules[m]["checks"] if not ok]
         out += [f"- consistency: {name} ({detail})" for name, ok, detail in cons if not ok]
         out += [f"- isolation: {r}" for r in iso_rows if not (r[4] == "yes" and r[7] == "yes")]
@@ -625,13 +621,13 @@ def build_report(skip_tests: bool = False) -> str:
              "All tables are recomputed on every run; paragraphs marked as the verifier's judgement describe the run they are dated with.", "",
              "## Headline numbers", ""]
     hb, hv = stab["halves"]["baseline"], stab["halves"]["vaep"]
-    lines += [f"- Test suite: `{tests['summary']}`; {len(tests['expected_failures'])} expected failures (Steps 5-6 not built), {len(tests['unexpected_failures'])} unexpected." if tests else "- Test suite: skipped.",
+    lines += [(f"- Test suite: `{tests['summary']}`; " + (f"**{len(tests['failed'])} failures** (section 1)." if tests["failed"] else "no failures.")) if tests else "- Test suite: skipped.",
               f"- Baseline: {rules['baseline']['n']} rated rows, mean {rules['baseline']['mean']:.3f}, {rules['baseline']['tens']} tens ({100 * rules['baseline']['tens'] / rules['baseline']['n']:.3f}%), min {rules['baseline']['groups'][-1][5]}, max {rules['baseline']['groups'][-1][6]}.",
               f"- VAEP: {rules['vaep']['n']} rated rows, mean {rules['vaep']['mean']:.3f}, {rules['vaep']['tens']} tens ({100 * rules['vaep']['tens'] / rules['vaep']['n']:.3f}%), min {rules['vaep']['groups'][-1][5]}, max {rules['vaep']['groups'][-1][6]}.",
               f"- Spearman between the methods: {comp['spearman_rating']:.3f} per player-match (GK {[s for g, n, s, p in comp['by_group'] if g == 'GK'][0]:.3f}, DEF {[s for g, n, s, p in comp['by_group'] if g == 'DEF'][0]:.3f}, "
               f"MID {[s for g, n, s, p in comp['by_group'] if g == 'MID'][0]:.3f}, FWD {[s for g, n, s, p in comp['by_group'] if g == 'FWD'][0]:.3f}); {comp['season']['spearman']:.3f} on season averages ({comp['season']['n_players']} players).",
               f"- Split-half stability (Pearson / Spearman, {hb['n']} players): baseline {hb['pearson']:.3f} / {hb['spearman']:.3f}, VAEP {hv['pearson']:.3f} / {hv['spearman']:.3f}.",
-              "- Rule violations or bugs found: " + ("none." if all(ok for m in METHODS for _, ok, _ in rules[m]["checks"]) and all(ok for _, ok, _ in cons) and not (tests and tests["unexpected_failures"]) else "**see section 6 (i)**.")]
+              "- Rule violations or bugs found: " + ("none." if all(ok for m in METHODS for _, ok, _ in rules[m]["checks"]) and all(ok for _, ok, _ in cons) and not (tests and tests["failed"]) else "**see section 6 (i)**.")]
     if ba is not None:
         agb, aga = ba["agree"]["before"], ba["agree"]["after"]
         sb_, sa_ = ba["stability"]["before"]["halves"], ba["stability"]["after"]["halves"]

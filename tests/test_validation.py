@@ -99,3 +99,43 @@ def test_pre_decision_weights_come_from_main_history():
     assert "fouls_won" in old.STATS and "penalties_scored" not in old.STATS
     assert old.WEIGHTS["DEF"]["goals_conceded"].weight == -0.80 and current.WEIGHTS["DEF"]["goals_conceded"].weight == -0.40
     assert old.WEIGHTS["MID"]["clean_sheet"].weight == 0.50 and current.WEIGHTS["MID"]["clean_sheet"].weight == 0.25
+
+
+SYNTHETIC_PYTEST_OUTPUT = """\
+........F.....E
+=========================== short test summary info ===========================
+FAILED tests/test_explain.py::test_every_number_in_the_explanation_appears_in_the_input[vaep] - AssertionError
+FAILED tests/test_pipeline.py::test_nothing_is_written_when_checks_fail - assert False
+ERROR tests/test_scale.py::test_ratings_bounded_3_to_10 - FileNotFoundError
+2 failed, 400 passed, 1 error in 12.00s
+"""
+
+
+def test_failures_in_step_5_and_6_tests_are_real_failures(monkeypatch):
+    """SYNTHETIC pytest output: test_explain.py and test_pipeline.py failures are no longer 'expected'."""
+    import subprocess
+
+    from src.validation import checks
+
+    assert not hasattr(checks, "EXPECTED_FAILING_FILES")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1, SYNTHETIC_PYTEST_OUTPUT, ""))
+    res = checks.run_test_suite()
+    assert res["failed"] == [
+        "tests/test_explain.py::test_every_number_in_the_explanation_appears_in_the_input[vaep]",
+        "tests/test_pipeline.py::test_nothing_is_written_when_checks_fail",
+        "tests/test_scale.py::test_ratings_bounded_3_to_10",
+    ]
+    assert "expected_failures" not in res and "unexpected_failures" not in res
+    assert res["summary"] == "2 failed, 400 passed, 1 error in 12.00s"
+    text = "\n".join(validate.section_tests(res))
+    assert "Failures (3)" in text and "test_explain.py::" in text and "test_pipeline.py::" in text
+    assert "xpected" not in text, "no 'expected failures' wording"
+
+
+def test_a_broken_pytest_run_is_never_reported_as_clean():
+    from src.validation.checks import parse_failures
+
+    assert parse_failures("no tests ran in 0.01s", returncode=4) == ["pytest exited with code 4 and reported no individual test"]
+    assert parse_failures("10 passed in 1.00s", returncode=0) == []
+    text = "\n".join(validate.section_tests({"command": "-m pytest -q", "seconds": 1.0, "summary": "10 passed in 1.00s", "failed": []}))
+    assert "Failures: **none**" in text
