@@ -81,8 +81,8 @@ Two choices matter for the results:
 - **Shots are valued by chance quality, not outcome.** The training labels are built from
   StatsBomb's expected goals (the probability that at least one chance in the window is
   converted) instead of whether a goal was scored. A goal is worth the chance it came from
-  rather than a flat +0.8, a missed penalty is no longer a catastrophe, and goalkeepers and
-  blockers are credited with the chances they stop. `reports/vaep_splits.md` documents the
+  rather than a flat +0.8, a missed penalty is no longer a catastrophe, and a goalkeeper's
+  save is credited with the chance it stops. `reports/vaep_splits.md` documents the
   formula and its effects.
 - **No match is scored by a model that saw it.** A chronological holdout (train matchweeks
   1–19, score 20–38) and 5-fold cross-fitting over the whole season are both recorded with
@@ -90,11 +90,18 @@ Two choices matter for the results:
   its model's training set. Held-out AUC is about 0.81 for both the scoring and the
   conceding model.
 
-VAEP sees only on-the-ball actions, so it undervalues defensive work: clearances, aerial
-duels, blocks and clean sheets carry little or no value, and a goalkeeper's saves are not
-actions of the keeper in the SPADL representation. The page therefore shows goalkeepers'
-baseline ratings in VAEP mode (marked "B"), and VAEP ratings for defenders are best read as
-attacking contribution.
+VAEP values on-the-ball actions only, and since the switch to xG labels its credit for
+defending is uneven. A goalkeeper's saves are SPADL actions (`keeper_save`) and earn +0.085
+each on average, 187 of the 273 VAEP points goalkeepers collect over the season. Nothing
+charges a keeper for goals conceded, though: the VAEP keeper rating is unrelated to the result
+(Spearman -0.06 with goal difference) and barely repeats from one half of the season to the
+other (0.22). For defenders, a typical clearance or tackle is worth about zero, but the first
+defending action after an opponent's missed shot inherits the shot's whole chance, so a single
+clearance can be worth +0.50 and decide a defender's rating. Results, clean sheets and cards
+barely register (defenders' VAEP rating has Spearman +0.06 with goal difference, and players
+who were sent off average 6.00). The page therefore shows goalkeepers' baseline ratings in VAEP
+mode (marked "B"), and VAEP ratings for defenders should not be relied on until that credit is
+fixed (`reports/validation.md`, section 6, concerns A and C).
 
 ### From raw score to rating
 
@@ -225,8 +232,9 @@ local only: the public page carries the 2015/16 season.
 - Only the baseline method runs on the current season: VAEP needs event data.
 - FPL positions follow the game's classification (wingers are usually MID), and FPL
   player names are short display names.
-- VAEP undervalues defensive work (see the caveat above); goalkeepers are shown
-  with their baseline rating in VAEP mode.
+- VAEP's credit for defending is unreliable (see the caveat above): it ignores goals
+  conceded and can hand one clearance a whole missed chance. Goalkeepers are shown with
+  their baseline rating in VAEP mode.
 - Explanations default to the template provider. The Anthropic provider is wired up
   behind `RATING_LLM_PROVIDER=anthropic` but has not been used or tested with a key.
 - Ratings are percentile-anchored within each season: a 7.0 in 2015/16 and a 7.0 in the
