@@ -121,30 +121,48 @@ def consistency_checks(data: Data) -> list[tuple[str, bool, str]]:
     checks.append(("raw_vaep = sum of the player's action values", diff < 1e-9, f"max |diff| {diff:.1e}; (game, player) pairs with actions but no lineup row: {len(sums.index.difference(keyed.index))}"))
     hold = pd.read_parquet(PROCESSED / "raw_vaep_holdout.parquet")
     checks.append(("raw_vaep_holdout covers exactly the holdout score matches", set(hold["match_id"]) == set(sp["holdout"]["score"]), f"{len(hold)} rows"))
-    # web export: every exported rating equals the parquet rating; position_group and minutes equal the lineups
-    index_path = WEB_DATA / "index.json"
-    if index_path.exists():
-        entries = json.loads(index_path.read_text(encoding="utf-8"))
-        lu = data.lineups.set_index(["match_id", "player_id"])
-        rated = {m: data.ratings[m].set_index(["match_id", "player_id"])["rating"] for m in METHODS}
-        n = bad = 0
-        for e in entries:
-            payload = json.loads((WEB_DATA / e["path"]).read_text(encoding="utf-8"))
-            mid = payload["match_id"]
-            for p in payload["players"]:
-                n += 1
-                key = (mid, p["player_id"])
-                ok = p["position_group"] == lu.loc[key, "position_group"] and abs(p["minutes"] - lu.loc[key, "minutes"]) < 1e-9
-                for m in METHODS:
-                    if p["minutes"] >= MIN_MINUTES:
-                        ok = ok and p["ratings"][m] == float(rated[m].loc[key])
-                    else:
-                        ok = ok and p["ratings"][m] is None
-                bad += int(not ok)
-        checks.append(("web/data payloads: rating null iff < 10 minutes, ratings and position_group equal the parquet files", bad == 0, f"{len(entries)} matches, {n} player rows, {bad} mismatches"))
-    else:
-        checks.append(("web/data payloads", False, "web/data/index.json not found (run python -m src.pipeline.export_web)"))
+    checks.append(web_payload_check(data))
     return checks
+
+
+def web_payload_check(data: Data, web_data=WEB_DATA) -> tuple[str, bool, str]:
+    """Every exported 2015/16 rating equals the parquet rating; position_group and minutes equal the lineups.
+
+    ``web/data/index.json`` also lists current-season FPL fixtures once the gameweek pipeline has run
+    (``merge_site_index``); those are not StatsBomb matches, so they are counted and skipped here.
+    """
+    from src.pipeline.export_web import SEASON
+
+    name = "web/data payloads: rating null iff < 10 minutes, ratings and position_group equal the parquet files"
+    index_path = web_data / "index.json"
+    if not index_path.exists():
+        return ("web/data payloads", False, "web/data/index.json not found (run python -m src.pipeline.export_web)")
+    entries = json.loads(index_path.read_text(encoding="utf-8"))
+    ours = [e for e in entries if e.get("season") == SEASON]
+    other = len(entries) - len(ours)
+    lu = data.lineups.set_index(["match_id", "player_id"])
+    rated = {m: data.ratings[m].set_index(["match_id", "player_id"])["rating"] for m in METHODS}
+    n = bad = 0
+    for e in ours:
+        payload = json.loads((web_data / e["path"]).read_text(encoding="utf-8"))
+        mid = payload["match_id"]
+        for p in payload["players"]:
+            n += 1
+            key = (mid, p["player_id"])
+            if key not in lu.index:
+                bad += 1
+                continue
+            ok = p["position_group"] == lu.loc[key, "position_group"] and abs(p["minutes"] - lu.loc[key, "minutes"]) < 1e-9
+            for m in METHODS:
+                if p["minutes"] >= MIN_MINUTES:
+                    ok = ok and key in rated[m].index and p["ratings"][m] == float(rated[m].loc[key])
+                else:
+                    ok = ok and p["ratings"][m] is None
+            bad += int(not ok)
+    detail = f"{len(ours)} matches, {n} player rows, {bad} mismatches"
+    if other:
+        detail += f"; {other} index entries from other seasons (current-season FPL output) not compared"
+    return (name, bad == 0 and len(ours) > 0, detail)
 
 
 # ---------------------------------------------------------------------------- 1. isolation
