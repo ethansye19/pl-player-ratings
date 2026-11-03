@@ -19,6 +19,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from src.console import use_utf8_output
+
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://raw.githubusercontent.com/statsbomb/open-data/master/data/"
@@ -105,6 +107,7 @@ def download_season(root: Path = RAW_ROOT, workers: int = 8, force: bool = False
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--root", type=Path, default=RAW_ROOT)
     parser.add_argument("--workers", type=int, default=8)

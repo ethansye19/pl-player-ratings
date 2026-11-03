@@ -139,3 +139,20 @@ def test_a_broken_pytest_run_is_never_reported_as_clean():
     assert parse_failures("10 passed in 1.00s", returncode=0) == []
     text = "\n".join(validate.section_tests({"command": "-m pytest -q", "seconds": 1.0, "summary": "10 passed in 1.00s", "failed": []}))
     assert "Failures: **none**" in text
+
+
+@pytest.mark.data
+@pytest.mark.slow
+def test_report_builds_without_any_snapshot(tmp_path, monkeypatch):
+    """A fresh checkout has neither data/processed/before/ nor data/processed/xg_labels/: section 8 (xG labels vs
+    option 3) is skipped with a note, and sections 6 (ii) and 7 say which outputs their VAEP numbers come from."""
+    from src.validation import data as data_module
+
+    monkeypatch.setattr(before_after, "BEFORE", tmp_path / "no-before-snapshot")
+    monkeypatch.setattr(data_module, "XG_LABELS", tmp_path / "no-xg-labels-snapshot")
+    report = validate.build_report(skip_tests=True)
+    assert "## 8. xG-label VAEP vs option 3" in report
+    assert "`data/processed/xg_labels/` (the frozen xG-label VAEP outputs) is not present, so the comparison with option 3 was skipped." in report
+    assert "xG-label VAEP -> option 3: **skipped**" in report
+    assert "(No `xg_labels/` snapshot: the VAEP numbers below are computed on the current option-3 outputs" in report
+    assert not re.search(r"\bnan\b", report), "a missing value was formatted as nan instead of n/a"

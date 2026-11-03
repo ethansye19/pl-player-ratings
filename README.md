@@ -1,12 +1,15 @@
 # Premier League player ratings
 
 Match-by-match player ratings on a **3.0–10.0 scale** for every Premier League match of
-2015/16, built two independent ways and compared:
+2015/16. The **headline rating is the baseline**; a second, experimental method runs alongside
+for comparison:
 
-1. **Baseline** – 35 per-match stats, hand-weighted with a separate weight profile per
-   position group.
-2. **VAEP** – the value of every on-the-ball action, learned from the event data with
-   [`socceraction`](https://github.com/ML-KULeuven/socceraction), summed per player per match.
+1. **Baseline (headline)** – 35 per-match stats, hand-weighted with a separate weight profile
+   per position group.
+2. **VAEP (experimental)** – the value of every on-the-ball action, learned from the event
+   data with [`socceraction`](https://github.com/ML-KULeuven/socceraction), summed per player
+   per match. It is experimental because goals still barely count in it (see
+   [Option 3](#option-3-the-vaep-scoring-fix-and-what-it-did-not-fix)).
 
 Around them: a match page that draws both lineups on a pitch, a "why this rating?"
 explanation feature that is checked against the player's own numbers, and a pipeline that
@@ -68,7 +71,7 @@ the pitch. There is no minutes term: a substitute with nothing to show scores ab
 a quiet full-match starter and above anyone with a clearly negative game. The full table with
 definitions is in `reports/baseline.md`.
 
-### VAEP: the value of every action
+### VAEP (experimental): the value of every action
 
 VAEP (Decroos, Bransen, Van Haaren and Davis, *Actions Speak Louder than Goals*, KDD 2019)
 values each on-the-ball action by how much it changes the team's chance of scoring, minus how
@@ -89,19 +92,23 @@ Two choices matter for the results:
   their full match lists in `vaep_splits.json`, and a test checks that no scored match is in
   its model's training set. Held-out AUC is about 0.81 for both the scoring and the
   conceding model.
+- **Two scoring rules turn the probabilities into values ("option 3").** A penalty state's
+  probability of scoring is set to the penalty's xG, because the models under-predict the 91
+  penalty states. The action after an unscored shot is measured against the chance that is
+  left once that shot has missed, so it no longer inherits the whole chance; a goalkeeper's
+  save keeps the full credit. The models are not retrained (`src/vaep/value.py`).
 
-VAEP values on-the-ball actions only, and since the switch to xG labels its credit for
-defending is uneven. A goalkeeper's saves are SPADL actions (`keeper_save`) and earn +0.085
-each on average, 187 of the 273 VAEP points goalkeepers collect over the season. Nothing
-charges a keeper for goals conceded, though: the VAEP keeper rating is unrelated to the result
-(Spearman -0.06 with goal difference) and barely repeats from one half of the season to the
-other (0.22). For defenders, a typical clearance or tackle is worth about zero, but the first
-defending action after an opponent's missed shot inherits the shot's whole chance, so a single
-clearance can be worth +0.50 and decide a defender's rating. Results, clean sheets and cards
-barely register (defenders' VAEP rating has Spearman +0.06 with goal difference, and players
-who were sent off average 6.00). The page therefore shows goalkeepers' baseline ratings in VAEP
-mode (marked "B"), and VAEP ratings for defenders should not be relied on until that credit is
-fixed (`reports/validation.md`, section 6, concerns A and C).
+VAEP values on-the-ball actions only, and its credit for defending is uneven. A goalkeeper's
+saves are SPADL actions (`keeper_save`) and earn +0.085 each on average, 187 of the 262 VAEP
+points goalkeepers collect over the season. Nothing charges a keeper for goals conceded,
+though: the VAEP keeper rating is unrelated to the result (Spearman -0.06 with goal difference)
+and barely repeats from one half of the season to the other (0.22). For defenders, a typical
+clearance or tackle is worth about zero, and since option 3 a clearance after a missed shot is
+worth at most +0.29. One tackle that ends a dangerous dribble can still be worth +0.37 and
+decide a defender's rating, while results, clean sheets and cards barely register (defenders'
+VAEP rating has Spearman +0.06 with goal difference, and players who were sent off average
+5.97). The page therefore shows goalkeepers' baseline ratings in VAEP mode (marked "B"), and
+VAEP ratings for defenders should be read with care (`reports/validation.md`, sections 6 and 8).
 
 ### From raw score to rating
 
@@ -141,29 +148,61 @@ baseline rating in VAEP mode. The verifier then re-ran on the new outputs:
 
 The two methods now agree more and both are more stable from one half of the season to the
 other, while defenders' ratings depend less on the result. Several things got worse, and they
-are documented rather than hidden:
+are documented rather than hidden. The VAEP numbers in this list are the xG-label VAEP as it
+stood after those decisions, before option 3 below:
 
-- **Under VAEP, goals barely count.** With shots valued by xG, an open-play goal is worth
-  +0.120 to the shooter on average and a miss +0.020, so scoring adds about 0.1. Agüero's five
-  goals against Newcastle rate 8.9 under VAEP (10.0 under the baseline), and 95 of the 870
-  rated appearances with a goal rate below 6.0 under VAEP (3 under the baseline).
-- **VAEP's credit for defending is close to a lottery.** The defending team's first action
-  after an opponent's missed shot inherits the whole chance. Steve Cook's single clearance
-  after a missed penalty is worth +0.50, 58% of his match total, and makes him a 9.9
-  (baseline 6.6). One tackle that ends a dangerous dribble can do the same: Patrick van
-  Aanholt rates 9.8 in a 0-2 home defeat (baseline 6.0). Defenders' VAEP split-half
+- **Under VAEP, goals barely counted.** With shots valued by xG, an open-play goal was worth
+  +0.120 to the shooter on average and a miss +0.020, so scoring added about 0.1. Agüero's five
+  goals against Newcastle rated 8.9 under VAEP (10.0 under the baseline), and 95 of the 870
+  rated appearances with a goal rated below 6.0 under VAEP (3 under the baseline).
+- **VAEP's credit for defending was close to a lottery.** The defending team's first action
+  after an opponent's missed shot inherited the whole chance. Steve Cook's single clearance
+  after a missed penalty was worth +0.50, 58% of his match total, and made him a 9.9
+  (baseline 6.6). One tackle that ends a dangerous dribble could do the same: Patrick van
+  Aanholt rated 9.8 in a 0-2 home defeat (baseline 6.0). Defenders' VAEP split-half
   stability fell from 0.44 to 0.29.
-- **Under VAEP, a penalty costs the taker whether it goes in or not.** A converted penalty is
+- **Under VAEP, a penalty cost the taker whether it went in or not.** A converted penalty was
   worth -0.112 to the taker on average and a missed one -0.298, because the models
-  under-predict the 91 penalty states. The 71 rated penalty scorers average 6.28 under VAEP
-  (7.51 under the baseline), and 45 of them rate below the 6.5 average.
+  under-predict the 91 penalty states. The 71 rated penalty scorers averaged 6.28 under VAEP
+  (7.51 under the baseline), and 45 of them rated below the 6.5 average.
 - **Short baseline cameos drifted down** once the team-context terms that used to prop them
   up were halved: 10–20 minute appearances average 5.85 (was 6.01), and 65% of them are below
   6.0 (was 43%).
 
-None of the VAEP problems is fixed yet. The candidate fixes change ratings, so they are waiting
-for a decision; section 6 of `reports/validation.md` describes them. Section 7 has the full
-before/after tables, including every player in the five notable matches.
+Section 7 of `reports/validation.md` has the full before/after tables, including every player
+in the five notable matches.
+
+### Option 3: the VAEP scoring fix, and what it did not fix
+
+A second review (2026-11-02) compared three fixes for the VAEP problems above on a scratch copy,
+and option 3 was applied: the two scoring rules described under the VAEP method. Nothing was
+retrained and no baseline rating changed. Section 8 of `reports/validation.md` has the full
+comparison.
+
+| VAEP quantity | xG labels | option 3 | baseline |
+|---|---|---|---|
+| value of a converted / missed penalty to the taker | -0.112 / -0.298 | -0.010 / -0.011 | |
+| penalty scorers' mean rating (71 appearances) | 6.28 | 6.81 | 7.51 |
+| penalty missers' mean rating (16 appearances) | 5.60 | 7.06 | 6.52 |
+| appearances with a goal rated below 6.0, of 870 | 95 | 75 | 3 |
+| Agüero's five goals against Newcastle | 8.9 | 8.9 | 10.0 |
+| most valuable single clearance | +0.54 | +0.29 | |
+| split-half stability, defenders | 0.29 | 0.35 | 0.58 |
+| split-half stability, all players | 0.52 | 0.54 | 0.56 |
+
+- **Penalties are now neutral, so a miss is free.** A penalty is worth about -0.01 to the taker
+  whether it goes in or not. Penalty scorers average 6.81 and players who missed a penalty
+  average 7.06: under VAEP, missers average more than scorers. The baseline still separates
+  them (7.51 and 6.52).
+- **The defensive lottery is smaller but not gone.** Steve Cook's clearance after a missed
+  penalty no longer carries his match: he rates 7.7 (was 9.9), and Cheikhou Kouyaté's 3-2 win at
+  Everton falls from 9.5 to 6.7. Patrick van Aanholt's tackle ended a dribble rather than
+  followed a shot, so he still rates 9.6 in a 0-2 home defeat. Defenders' VAEP split-half
+  stability rose from 0.29 to 0.35, against 0.58 for the baseline.
+- **Goals still barely count.** An open-play goal is worth +0.121 to the shooter and a miss
+  +0.021. Agüero's five goals still rate 8.9, and 75 of the 870 appearances with a goal still
+  rate below 6.0 under VAEP, against 3 under the baseline. This is why the baseline is the
+  headline rating and VAEP is labelled experimental.
 
 ## Why this rating?
 
@@ -195,9 +234,9 @@ from the LLM provider has only the checker's guarantee.
 
 > Roberto Firmino (Liverpool, FWD) rated 3.5 with the VAEP method in Leicester City 2-0
 > Liverpool, playing 87.7 minutes. Firmino's 3.5 rests on a successful pass in minute 83
-> (+0.06), a successful pass in minute 38 (+0.02) and an unsuccessful shot in minute 57
+> (+0.03), a successful pass in minute 38 (+0.02) and an unsuccessful shot in minute 57
 > (+0.02). The costliest moments were a bad touch in minute 77 (-0.24) and a bad touch in
-> minute 67 (-0.11). Raw score -0.79.
+> minute 67 (-0.11). Raw score -0.82.
 
 The text above comes from the deterministic **template provider**, which needs no API key
 and is the default. An **LLM provider** (Claude, through the official SDK) is wired up behind
@@ -236,9 +275,10 @@ local only: the public page carries the 2015/16 season.
 - Only the baseline method runs on the current season: VAEP needs event data.
 - FPL positions follow the game's classification (wingers are usually MID), and FPL
   player names are short display names.
-- VAEP's credit for defending is unreliable (see the caveat above): it ignores goals
-  conceded and can hand one clearance a whole missed chance. Goalkeepers are shown with
-  their baseline rating in VAEP mode.
+- VAEP is experimental. Goals still barely count in it, a missed penalty costs the taker
+  nothing, it ignores goals conceded, and one tackle can still decide a defender's rating
+  (see the caveat above and Option 3). Goalkeepers are shown with their baseline rating in
+  VAEP mode, and the baseline is the headline rating.
 - Explanations default to the template provider. The Anthropic provider is wired up
   behind `RATING_LLM_PROVIDER=anthropic` but has not been used or tested with a key.
 - Ratings are percentile-anchored within each season: a 7.0 in 2015/16 and a 7.0 in the
@@ -259,8 +299,9 @@ processed data; its code is in `src/validation/` and its findings are in
 
 I designed the spec, reviewed every checkpoint before the next step started, and made the
 modelling decisions: the weight changes after the first validation pass, valuing shots by
-their xG in the VAEP labels instead of counting only goals, and showing goalkeepers with
-their baseline rating in VAEP mode.
+their xG in the VAEP labels instead of counting only goals, showing goalkeepers with their
+baseline rating in VAEP mode, and, after a second review, applying option 3 to VAEP while
+making the baseline the headline rating and labelling VAEP experimental.
 
 ## Setup
 
@@ -300,6 +341,7 @@ Other entry points:
 ```powershell
 .venv\Scripts\python -m src.explain.explain --match <match_id> --player <player_id> --method baseline|vaep|both
 .venv\Scripts\python -m src.pipeline.gameweek [--gw 8] [--if-new]      # current season -> web/data/current/
+.venv\Scripts\python -m src.vaep.score                                  # re-score VAEP with the saved models (no retraining)
 .venv\Scripts\python -m src.pipeline.export_site                        # rebuild the public site in docs/
 .venv\Scripts\python -m src.validation.validate                         # regenerate reports/validation.md
 ```

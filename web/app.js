@@ -20,8 +20,9 @@
 
   const METHOD_LABELS = { baseline: 'Baseline', vaep: 'VAEP' };
   const METHOD_BLURBS = {
-    baseline: 'hand-weighted match stats, with separate weights per position group',
-    vaep: 'the value of every on-ball action (socceraction VAEP), summed per player'
+    baseline: 'the headline rating, built from hand-weighted match stats with separate weights per position group',
+    vaep: 'an experimental rating, the value of every on-ball action (socceraction VAEP) summed per player; ' +
+      'goals count for little and a missed penalty costs the taker nothing'
   };
 
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -541,7 +542,7 @@
     renderTable(payload, state.method);
     renderCredit(payload);
     ui.methodNote.textContent = label + ': ' + (METHOD_BLURBS[state.method] || 'rating method') + '.';
-    ui.lineupsTitle.textContent = 'Lineups · ' + label + ' ratings';
+    ui.lineupsTitle.textContent = 'Lineups · ' + label + ' ratings' + (state.method === 'vaep' ? ' (experimental)' : '');
     ui.gkNote.textContent = GK_NOTE;
     ui.gkNote.hidden = state.method !== 'vaep';
     setHighlight(null);

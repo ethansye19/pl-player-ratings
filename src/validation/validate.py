@@ -19,9 +19,10 @@ import time
 
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.contract import MIN_MINUTES, POSITION_GROUPS
-from src.validation import analysis, before_after, checks
-from src.validation.data import METHODS, REPORT_PATH, Data, fmt, load, md_table
+from src.validation import analysis, before_after, checks, option3
+from src.validation.data import METHODS, REPORT_PATH, Data, fmt, load, load_xg_labels, md_table
 
 log = logging.getLogger("src.validation.validate")
 
@@ -33,18 +34,21 @@ MATCH_NOTES = {
     3754013: "What happened: Vardy (34') and Mahrez (48') put Leicester 2-0 up, Remy pulled one back; Mourinho's last match in charge of Chelsea "
              "(the brief lists this as 3-1; the data and the record say 2-1). Baseline (after the decisions): Mahrez 8.5 top, Vardy 7.1, Albrighton 7.7 and Kante 7.2 read right; "
              "Ivanovic 8.0 (was 7.6) as Chelsea's best in a defeat is the one questionable row and got slightly worse because the halved team context no longer pulls a losing defender down. "
-             "VAEP (xG labels): Mahrez 8.8 still top, but Vardy's goal is now worth so little that he falls to 5.6 (was 7.4) and Kante climbs to 8.2 on ball recoveries after chances.",
+             "VAEP (option 3): Ivanovic 9.1 (was 7.7) now tops the match in a defeat, mostly for a rebound he shot at 62' that did not go in: under the after-shot rule a rebound is measured "
+             "against the chance left after the first miss, so it is worth +0.23 instead of +0.01. Mahrez 8.7 is next; Vardy's goal is worth so little that he rates 5.5 (was 7.4); "
+             "Kante is back to 7.2 because his dribble straight after a Chelsea miss no longer collects that miss.",
     3754290: "What happened: Huth headed in at 3' and 60', Mahrez scored at 48'; Aguero's 87' goal was a consolation. Baseline: Huth 10.0 (was 9.8), Mahrez 8.2, Fuchs 8.3 (assist, six tackles) - right; "
              "Demichelis 7.6 (was 7.0) as City's best player in a 1-3 home defeat is the price of halving the team context (his seven aerials and twelve progressive passes are no longer offset); "
              "Ulloa's 13-minute cameo at 5.0 is still harsh. VAEP: Huth's two headers are now worth 7.1 (was 9.9) because a header from a corner adds little to a state that already carried the corner's xG, "
-             "while Fernandinho (8.4, was 5.9) and Vardy (8.9, no goal) rise on chances created; Fuchs' assist drops him to 5.3. For this match the outcome-based VAEP matched the eye better.",
+             "while Fernandinho (8.1, was 5.9) and Vardy (8.8, no goal) rise on chances created; Fuchs' assist leaves him at 5.1. For this match the outcome-based VAEP matched the eye better.",
     3754275: "What happened: Vardy's 60' volley from Mahrez's long ball, then a second at 71'. Baseline: Fuchs 8.5 still edges Vardy 8.3 (a 7.0 DEF raw remains rarer than an 8.1 FWD raw); Firmino 5.1 (13 possessions lost). "
-             "VAEP: Vardy 8.4 (was 9.0) still Leicester's best, Emre Can 7.6 (was 6.1) and Lucas 8.1 rise; Firmino 3.5.",
+             "VAEP: Vardy 8.4 (was 9.0) still Leicester's best, Emre Can 7.7 (was 6.1) and Lucas 8.0 rise; Firmino 3.5.",
     3754079: "What happened: Mitrovic opened the scoring; Aguero scored five between 42' and 62'; De Bruyne (goal, two assists) and Silva (two assists) ran the game. Baseline: Aguero 10.0, De Bruyne 9.4, Silva 8.0 - right; "
-             "Newcastle's beaten defenders rise from 4.5-4.7 to 5.1-5.3 and Anita from 4.9 to 5.8 after the team-context halving (still the bottom of the match, which is fair in a 1-6). VAEP: Aguero's five goals are now worth 0.83 in total and an 8.9 "
-             "(was 10.0); Kolarov 8.5, Silva 8.2 and Mitrovic 8.2 now rank close to him; Fernando 7.7 (was 4.1) is no longer punished for 1.29 xG of misses.",
+             "Newcastle's beaten defenders rise from 4.5-4.7 to 5.1-5.3 and Anita from 4.9 to 5.8 after the team-context halving (still the bottom of the match, which is fair in a 1-6). VAEP: Aguero's five goals are worth +0.49 between them "
+             "(+0.82 for his whole match) and make him an 8.9 (was 10.0); Kolarov 8.6, Silva 8.2 and Mitrovic 8.2 rank close to him; Fernando 7.8 (was 4.1) is no longer punished for 1.29 xG of misses.",
     3754092: "What happened: the 'Battle of the Bridge' - Kane 35', Son 44', Cahill 58', Hazard 83' ended Tottenham's title challenge; twelve yellow cards. Baseline: Cahill 8.2, Hazard 7.7, Kane 7.7, Son 7.5 - the four scorers lead, as before. "
-             "VAEP: Ivanovic 8.3 (was 6.5) and Son 8.1 lead, Cahill falls to 7.4 (a header from a cross: little added xG), Hazard 6.8, Kane 7.0; Lloris 6.6 (was 8.0) is the goalkeeper correction working.",
+             "VAEP (option 3): Son 8.1 (was 7.7) leads, then Azpilicueta 7.9; Ivanovic is 7.3 (was 6.5; 8.3 with xG labels alone), because his dribble straight after a Tottenham miss no longer collects that miss; "
+             "Cahill falls to 7.5 (a header from a cross: little added xG), Hazard 6.8, Kane 7.0; Lloris 6.6 (was 8.0) is the goalkeeper correction working.",
 }
 
 
@@ -171,11 +175,12 @@ def section_eye(data: Data, tops: dict, matches: list, buckets: dict) -> list[st
                 "top VAEP action is defensive credit on a non-shot action.", ""]
     out += ["**Verifier's judgement (re-validation run after the Step 4 decisions; the pre-decision reading is in `reports/validation_before.md`).** Baseline: the list is still goal-driven and legitimate "
             "(eight hat-tricks or better, two-goal defenders, Forster's eleven-save 0-0 at Arsenal); the entries that moved in - Mane's hat-trick, De Bruyne's goal and two assists, Ramsey, Boruc's clean sheet with a penalty save - "
-            "are as defensible as those they replaced (Aguero at Chelsea, Barkley, Silva, Koscielny), and the five-goal Aguero game remains the clear number one. VAEP with xG labels: the list is no longer 'who scored' - it is "
-            "'who was on the ball, or first to it, when a big chance happened'. Nine of the twenty have neither a goal nor an assist; van Aanholt (9.8) and Mignolet (9.4) are in there for 0-2 defeats, Kouyate and Steve Cook for "
-            "single clearances worth +0.54 and +0.50, Mignolet for five saves worth +0.14 to +0.29 each; Bony and Ramsey top the list with one goal apiece; Aguero's five goals are now worth +0.83 in total and an 8.9, outside the top 20. "
-            "The outcome lottery has moved from the shooter to whoever touched the ball next: with xG labels a state that contains a 0.5-xG shot keeps P(concede) at 0.5 whether or not the shot went in, and the defending team's next "
-            "action - a clearance, a tackle, a save - is credited with the whole drop. This is a new eye-test failure, worse than the one it replaced for defenders and keepers, better for creative midfielders and forwards (section 6).", ""]
+            "are as defensible as those they replaced (Aguero at Chelsea, Barkley, Silva, Koscielny), and the five-goal Aguero game remains the clear number one. "
+            "VAEP (xG labels with the option-3 rules; the xG-label list is in section 8.2): Bony (two goals and an assist), Ramsey (a goal and an assist) and Lamine Kone (two goals) top it, Steve Cook and Kouyate are gone "
+            "(their clearances straight after missed penalties were worth +0.50 and +0.54 and are now worth about -0.06), and Walcott, Jonny Evans, Mane's hat-trick and Coleman came in. What still reads wrong: eight of the twenty have "
+            "neither a goal nor an assist, and five come from defeats without one - Baines 9.8 in a 0-1 at Old Trafford, van Aanholt 9.6 in a 0-2 home defeat for one tackle worth +0.37 that ended a dribble, Payet 9.5 in a 1-4 home "
+            "defeat, Mignolet 9.4 conceding two, Coleman 9.4 in a 0-1 home defeat. Aguero's five goals are worth +0.49 between them and an 8.9, outside the top 20. Option 3 removed the clearance-after-a-miss lottery "
+            "but not the underlying problem: the list still rewards being on the ball around big chances more than scoring them, which is why the baseline is the headline rating.", ""]
     out += ["### 3.3 Five notable matches", "",
             "B = baseline, V = VAEP. 'marks' are derived from the match events (G goals incl. penalties, A assists, OG, RED, errors, penalties). Both teams, every rated player; unrated (< 10 minutes) players are listed below each table. "
             "Section 7.1 repeats these matches with the pre-decision ratings side by side.", ""]
@@ -321,7 +326,8 @@ def section_before_after(ba: dict | None, data: Data) -> list[str]:
     if ba is None:
         out += skipped_comparisons_note()
         return out
-    out += ["Before = the frozen pre-decision outputs in `data/processed/before/` (outcome-label VAEP, original baseline weights); after = the current files. "
+    out += ["Before = the frozen pre-decision outputs in `data/processed/before/` (outcome-label VAEP, original baseline weights); after = the state right after the decisions: "
+            "the current baseline files and the xG-label VAEP frozen in `data/processed/xg_labels/` (the current VAEP adds option 3, section 8). "
             "Decisions applied: D (DEF/MID team-context weights halved), E (FWD aerials/possession weights eased), F (`penalties_scored` at 1.25, `goals` non-penalty only, `key_passes` without assists), "
             "B (VAEP shots valued through xG soft labels), A (goalkeepers shown with their baseline rating in VAEP mode on the page). G, H and the 12/16 reclassification were skipped.", ""]
     # 7.1 matches
@@ -344,7 +350,8 @@ def section_before_after(ba: dict | None, data: Data) -> list[str]:
             "Before:", "", md_table(["player-match", "group", "min", "baseline", "vaep", "vaep - baseline"], ba["disagree"]["before"]), "",
             "After:", "", md_table(["player-match", "group", "min", "baseline", "vaep", "vaep - baseline"], ba["disagree"]["after"]), "",
             f"Goalkeepers in the before list: {sum(1 for r in ba['disagree']['before'] if r[1] == 'GK')}; in the after list: {sum(1 for r in ba['disagree']['after'] if r[1] == 'GK')}. "
-            "The after list is dominated by defenders whom VAEP credits with a single big clearance/tackle (van Aanholt, Cook, Delaney) and attackers whose goals add little xG beyond the state that preceded them (Lukaku, Williams, Antonio).", ""]
+            "The after list is dominated by defenders whom VAEP credits with one big action (van Aanholt's tackle at the end of a dribble, Steve Cook's clearance after a missed penalty, Delaney's missed shot worth +0.34 after a "
+            "fumbled save) and goal-scorers whose goals add little beyond the state that preceded them (Lukaku's two goals are worth +0.03 and -0.01, Antonio's +0.15, and the centre-back Ashley Williams' goal -0.02).", ""]
     # 7.4 agreement + old vs new
     ag_b, ag_a = ba["agree"]["before"], ba["agree"]["after"]
     rows = [[k, fmt(ag_b[k]), fmt(ag_a[k]), f"{ag_a[k] - ag_b[k]:+.3f}"] for k in ("all", "GK", "DEF", "MID", "FWD", "season")]
@@ -453,8 +460,9 @@ def _item(d: dict | None, key, i: int):
 
 
 def section_findings(rules: dict, cons: list, iso_rows: list, tests: dict | None, pos: dict, comp: dict, stab: dict, buckets: dict,
-                     ba: dict | None, cur: dict) -> list[str]:
-    """Section 6. ``cur`` is ``before_after.compute_current(data)``; ``ba`` is None without the before/ snapshot."""
+                     ba: dict | None, cur: dict, step4_frozen: bool = True) -> list[str]:
+    """Section 6. (i) uses the current outputs; (ii) uses the state after the Step 4 decisions (``pos``, ``comp``, ``stab``
+    and ``cur`` computed on it), with ``ba`` None without the before/ snapshot."""
     all_rules_pass = all(ok for m in METHODS for _, ok, _ in rules[m]["checks"]) and all(ok for _, ok, _ in cons) and all(r[4] == "yes" and r[7] == "yes" for r in iso_rows)
     failed_tests = tests["failed"] if tests else []
     tc = {g: s for g, s, *_ in comp["team_context"]}
@@ -476,9 +484,16 @@ def section_findings(rules: dict, cons: list, iso_rows: list, tests: dict | None
         out += [f"- consistency: {name} ({detail})" for name, ok, detail in cons if not ok]
         out += [f"- isolation: {r}" for r in iso_rows if not (r[4] == "yes" and r[7] == "yes")]
         out += [""]
-    out += ["Still open from the first report (not code): the brief's 'Leicester City 3-1 Chelsea' was 2-1; `test_each_position_group_is_anchored_separately` allows +/- 0.15 where CLAUDE.md says +/- 0.1 (the data passes at +/- 0.1).", ""]
+    out += ["Still open from the first report (not code): the brief's 'Leicester City 3-1 Chelsea' was 2-1. Resolved on 2026-11-02: `test_each_position_group_is_anchored_separately` now uses "
+            "`MEAN_TOLERANCE` (+/- 0.1, as CLAUDE.md says) instead of +/- 0.15, and the data passes.", ""]
 
     out += ["### (ii) What the decisions achieved against the original concerns A-H, and what they introduced", ""]
+    if step4_frozen:
+        out += ["The 'after' numbers here are the state right after the Step 4 decisions: the current baseline and the xG-label VAEP frozen in `data/processed/xg_labels/`. "
+                "Option 3 later changed the VAEP side of B(2), C and the penalties; section 8 has what it changed.", ""]
+    else:
+        out += ["(No `xg_labels/` snapshot: the VAEP numbers below are computed on the current option-3 outputs, not on the xG-label state this section describes; "
+                "section 8 was skipped.)", ""]
     have = ba is not None
     if not have:
         out += ["(No `before/` snapshot: every computed before value below is printed as n/a. The judgement prose is static text from the dated run, so the before values it "
@@ -530,8 +545,9 @@ def section_findings(rules: dict, cons: list, iso_rows: list, tests: dict | None
             f"FWD {_v(fwd_stab['vaep'][0])} -> {_v(fwd_stab['vaep'][1])}, MID likewise up). **Introduced three problems.** (1) *Goals barely count*: scoring is worth about 0.10 more than missing, a five-goal Aguero is an 8.9 "
             f"(was 10.0) and outside the top 20, Huth's two headers v City are a 7.1 (was 9.9), one-goal scorers average {ea['scored exactly 1 goal'][2]:.2f} under VAEP (before {_v(_item(eb, 'scored exactly 1 goal (any kind)', 2))}; baseline {ea['scored exactly 1 goal'][1]:.2f}), "
             f"and {comp['low_scorers_vaep'].shape[0]} goal-scorers rate below 5.5 - a match rating that does not reward the goal is hard to present to fans. (2) *The outcome lottery moved to the defence*: because a state that contains a "
-            "0.5-xG shot keeps P(concede) at 0.5 whether or not the shot went in, the defending team's next action within 10 seconds (a clearance, tackle or save) absorbs the whole drop: single clearances worth +0.50 "
-            "(Steve Cook 9.9, Kouyate 9.5) and tackles worth +0.37 (van Aanholt 9.8 in a 0-2 home defeat) now top the DEF list, nine of the VAEP top 20 have neither goal nor assist, and DEF split-half stability fell from "
+            "0.5-xG shot keeps P(concede) at 0.5 whether or not the shot went in, the defending team's first action within 10 seconds of a missed shot absorbs the whole drop. In SPADL that action is a keeper save or a "
+            "clearance, never a tackle: single clearances straight after missed penalties worth +0.50 and +0.54 (Steve Cook 9.9, Kouyate 9.5) top the DEF list. A separate effect looks the same on the page: one tackle that ends "
+            "a dangerous dribble can be worth +0.37 (van Aanholt 9.8 in a 0-2 home defeat). Nine of the VAEP top 20 have neither goal nor assist, and DEF split-half stability fell from "
             f"{_v(def_stab['vaep'][0])} to {_v(def_stab['vaep'][1])} (every other group rose). (3) *Penalties got worse*, see below. Verdict: the direction is right but the implementation over-corrects; see the options below.", ""]
     pen_a = ea["converted a penalty"]
     out += [f"**Penalties under xG labels (builders' flag i).** Confirmed: the kick is worth {pv.loc['success', 'mean']:+.3f} to a taker who scores and {pv.loc['fail', 'mean']:+.3f} to one who misses "
@@ -610,14 +626,26 @@ def build_report(skip_tests: bool = False) -> str:
     comp = analysis.method_comparison(data)
     stab = analysis.stability(data)
     log.info("analysis done (%.0fs)", time.time() - t0)
-    cur = before_after.compute_current(data)
-    ba = before_after.compute(data, current=cur)
-    log.info("before/after done (%.0fs)%s", time.time() - t0, "" if ba is not None else "; no before/ snapshot, comparisons skipped")
+    # Sections 6 (ii) and 7 are the history of the Step 4 decisions: their 'after' is the current baseline with the
+    # xG-label VAEP frozen in data/processed/xg_labels/ (the current VAEP adds option 3, which section 8 compares).
+    step4 = load_xg_labels(data)
+    hist = step4 if step4 is not None else data
+    if step4 is not None:
+        comp_h, stab_h, pos_h = analysis.method_comparison(step4), analysis.stability(step4), {"role": checks.role_table(step4)}
+    else:
+        comp_h, stab_h, pos_h = comp, stab, pos
+    cur = before_after.compute_current(hist)
+    ba = before_after.compute(hist, current=cur)
+    o3 = option3.compute(data, step4)
+    log.info("before/after done (%.0fs)%s%s", time.time() - t0, "" if ba is not None else "; no before/ snapshot, comparisons skipped",
+             "" if o3 is not None else "; no xg_labels/ snapshot, option-3 comparison skipped")
 
-    lines = [f"# Validation report: Premier League 2015/16 player ratings (Step 4, re-validated after the weight and label decisions)", "",
+    lines = [f"# Validation report: Premier League 2015/16 player ratings (Step 4, re-validated after the weight and label decisions and option 3)", "",
              f"Generated by `python -m src.validation.validate` on {dt.date.today().isoformat()} from `data/processed` (StatsBomb Open Data, Premier League 2015/16, 380 matches; "
              "https://github.com/statsbomb/open-data). Written by an independent verifier who did not build the rating code; the builders' reports in `reports/` were treated as claims and re-checked. "
-             "Sections 1-6 describe the CURRENT outputs; section 7 compares them with the frozen pre-decision outputs in `data/processed/before/`. The pre-decision report is `reports/validation_before.md`. "
+             "Sections 1-5 and 6 (i) describe the CURRENT outputs, whose VAEP uses the option-3 scoring rules (decision 2026-11-02). Section 6 (ii) and section 7 are the history of the Step 4 decisions: "
+             "they compare the frozen pre-decision outputs in `data/processed/before/` with the state right after those decisions, i.e. the current baseline and the xG-label VAEP frozen in "
+             "`data/processed/xg_labels/`. Section 8 compares that xG-label VAEP with option 3. The pre-decision report is `reports/validation_before.md`. "
              "All tables are recomputed on every run; paragraphs marked as the verifier's judgement describe the run they are dated with.", "",
              "## Headline numbers", ""]
     hb, hv = stab["halves"]["baseline"], stab["halves"]["vaep"]
@@ -646,19 +674,25 @@ def build_report(skip_tests: bool = False) -> str:
                   ]), ""]
     else:
         lines += ["- Before -> after the Step 4 decisions: **skipped**, `data/processed/before/` is not present (section 7 lists every comparison that was skipped).", ""]
+    if o3 is not None:
+        lines += ["xG-label VAEP -> option 3 (details in section 8):", "", md_table(["quantity", "xG labels", "option 3"], option3.summary_rows(o3)), ""]
+    else:
+        lines += ["- xG-label VAEP -> option 3: **skipped**, `data/processed/xg_labels/` is not present (section 8).", ""]
     lines += section_tests(tests)
     lines += section_rules(rules, iso, cons)
     lines += section_positions(pos)
     lines += section_eye(data, tops, matches, buckets)
     lines += section_compare(comp)
     lines += section_stability(stab)
-    lines += section_findings(rules, cons, iso, tests, pos, comp, stab, buckets, ba, cur)
-    lines += section_before_after(ba, data)
+    lines += section_findings(rules, cons, iso, tests, pos_h, comp_h, stab_h, buckets, ba, cur, step4_frozen=step4 is not None)
+    lines += section_before_after(ba, hist)
+    lines += option3.section(o3)
     lines += ["---", "", f"Report generated in {time.time() - t0:.0f} s. Data: StatsBomb Open Data (https://github.com/statsbomb/open-data).", ""]
     return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description="Regenerate reports/validation.md (read-only on data/processed).")
     parser.add_argument("--skip-tests", action="store_true", help="do not run the pytest suite")
     parser.add_argument("--out", default=str(REPORT_PATH), help="output path (default reports/validation.md)")

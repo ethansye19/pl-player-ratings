@@ -308,12 +308,18 @@ def position_group_analysis(data: Data) -> dict:
         paired[method] = t
     out["paired"] = paired
     # role within group (60+ minutes)
-    full = both[both["minutes"] >= 60].copy()
-    full["role"] = full["position_id"].map(ROLE_OF_POSITION)
-    role = full.groupby(["position_group", "role"]).agg(n=("rating_b", "size"), baseline=("rating_b", "mean"), vaep=("rating_v", "mean"),
-                                                        raw_b=("raw_score_b", "mean"), raw_v=("raw_score_v", "mean")).reset_index()
-    out["role"] = role
+    out["role"] = role_table(data)
     out["position_counts"] = lu["position_id"].map(POSITION_NAMES).value_counts()
     wm, w = lu[lu["position_id"].isin([12, 16])], lu[lu["position_id"].isin([17, 21])]
     out["wide"] = {"wide_mid": len(wm), "wingers": len(w), "players_both": len(set(wm["player_id"]) & set(w["player_id"]))}
     return out
+
+
+def role_table(data: Data) -> pd.DataFrame:
+    """Mean rating and raw score of 60+ minute appearances by the role actually played, per group and method."""
+    both = data.both
+    full = both[both["minutes"] >= 60].copy()
+    full["role"] = full["position_id"].map(ROLE_OF_POSITION)
+    role = full.groupby(["position_group", "role"]).agg(n=("rating_b", "size"), baseline=("rating_b", "mean"), vaep=("rating_v", "mean"),
+                                                        raw_b=("raw_score_b", "mean"), raw_v=("raw_score_v", "mean")).reset_index()
+    return role

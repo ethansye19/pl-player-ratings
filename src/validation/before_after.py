@@ -335,7 +335,9 @@ def compute(data: Data, current: dict | None = None) -> dict | None:
 
 
 if __name__ == "__main__":
+    from src.console import use_utf8_output
     from src.validation.data import load
+    use_utf8_output()
     pd.set_option("display.width", 250)
     data = load()
     res = compute(data)

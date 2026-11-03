@@ -15,6 +15,7 @@ import pathlib
 import numpy as np
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.baseline.rate import PROCESSED_DIR, RAW_FILE, STATS_FILE
 import src.baseline.weights as weights_module
 from src.baseline.weights import LABELS, STATS, WEIGHTS, stat_definitions, weight_of
@@ -264,6 +265,7 @@ def build_report(processed_dir: pathlib.Path = PROCESSED_DIR) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description="Write reports/baseline.md from the cached baseline tables.")
     parser.add_argument("--processed-dir", default=str(PROCESSED_DIR))
     parser.add_argument("--out", default=str(REPORT_PATH))

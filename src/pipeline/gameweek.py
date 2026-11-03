@@ -26,6 +26,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.contract import (
     CONTRACT_COLUMNS,
     MEAN_TOLERANCE,
@@ -408,6 +409,7 @@ def merge_site_index(out_dir: Path | str = DEFAULT_OUT, site_dir: Path | str = P
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--gw", type=int, default=None, help="gameweek to rate (default: latest finished)")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)

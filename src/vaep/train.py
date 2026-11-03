@@ -12,8 +12,11 @@ Steps
 4. Record the splits in ``vaep_splits.json``.
 5. Score every action of every match with the fold model that did not train on it
    (``action_values.parquet``, cross-fitted) and sum per player per match through
-   ``src.vaep.rate.rate_match`` (``raw_vaep.parquet``).
+   ``src.vaep.rate.rate_match`` (``raw_vaep.parquet``). Probabilities become values through
+   ``src.vaep.value`` (socceraction's formula plus the option-3 penalty and after-shot rules).
 6. Score the holdout matches (weeks 20-38) with the holdout model (``raw_vaep_holdout.parquet``).
+
+Steps 5-6 alone, with the saved models: ``python -m src.vaep.score``.
 
 Model quality on each split's never-seen games is written to ``models/vaep_metrics.json``;
 ``python -m src.vaep.report`` turns it into ``reports/vaep_splits.md``.
@@ -30,6 +33,7 @@ from importlib.metadata import version
 import numpy as np
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.contract import SEED, validate_contract
 from src.vaep.config import (
     ACTION_VALUE_COLUMNS,
@@ -144,18 +148,22 @@ def fit_split(
     return model, info
 
 
-def score_games(game_ids, model_for_game, actions_by_game, lineups_by_game, home_of_game, fold_of_game=None, log_every=20):
-    """Action values (optional) and contract raw scores for ``game_ids`` via ``rate_match``."""
+def score_games(game_ids, model_for_game, actions_by_game, lineups_by_game, home_of_game, fold_of_game=None, log_every=20, shot_xg=None):
+    """Action values (optional) and contract raw scores for ``game_ids`` via ``rate_match``.
+
+    ``shot_xg`` is the season's event id -> xG lookup (``shot_xg_lookup()``); each game only looks
+    up its own shots in it, exactly as ``rate_match`` would read them for that match alone.
+    """
     value_parts, raw_parts = [], []
     t0 = time.perf_counter()
     game_ids = sorted(int(g) for g in game_ids)
     for i, gid in enumerate(game_ids, 1):
         model = model_for_game(gid)
         if fold_of_game is not None:
-            values = action_values_for_match(gid, actions_by_game[gid], model, home_team_id=home_of_game[gid])
+            values = action_values_for_match(gid, actions_by_game[gid], model, home_team_id=home_of_game[gid], shot_xg=shot_xg)
             values["fold_id"] = np.int64(fold_of_game[gid])
             value_parts.append(values)
-        raw_parts.append(rate_match(gid, actions_by_game[gid], lineups_by_game[gid], model, home_team_id=home_of_game[gid]))
+        raw_parts.append(rate_match(gid, actions_by_game[gid], lineups_by_game[gid], model, home_team_id=home_of_game[gid], shot_xg=shot_xg))
         if i % log_every == 0 or i == len(game_ids):
             log.info("scored %d/%d games (%.0fs)", i, len(game_ids), time.perf_counter() - t0)
     values = pd.concat(value_parts, ignore_index=True) if value_parts else None
@@ -173,7 +181,48 @@ def check_raw_against_lineups(raw: pd.DataFrame, lineups: pd.DataFrame, match_id
         raise RuntimeError(f"raw scores do not cover the lineups exactly: {len(got - want)} extra, {len(want - got)} missing")
 
 
+def score_and_write(matches, lineups, actions, folds, fold_models, holdout, holdout_model, xg_by_event) -> tuple:
+    """Steps 5 and 6: score the season with fitted models and write the three output files.
+
+    Every match is scored by the fold model that did not train on it (``action_values.parquet``,
+    ``raw_vaep.parquet``) and the holdout matches by the holdout model (``raw_vaep_holdout.parquet``),
+    through ``rate_match`` and the option-3 value rules. Used by ``main`` after fitting and by
+    ``src.vaep.score`` with the saved models. Returns ``(values, raw, raw_holdout)``.
+    """
+    fold_of_game = {gid: k for k, fold in enumerate(folds) for gid in fold.score}
+    home_of_game = {int(m): int(h) for m, h in zip(matches["match_id"], matches["home_team_id"])}
+    actions_by_game = {int(gid): df for gid, df in actions.groupby("game_id", sort=True)}
+    lineups_by_game = {int(mid): df for mid, df in lineups.groupby("match_id", sort=True)}
+    all_ids = sorted(int(m) for m in matches["match_id"])
+    log.info("scoring the season with the cross-fitting fold models")
+    values, raw = score_games(
+        all_ids, lambda gid: fold_models[fold_of_game[gid]], actions_by_game, lineups_by_game, home_of_game, fold_of_game,
+        shot_xg=xg_by_event,
+    )
+    values = values[ACTION_VALUE_COLUMNS].sort_values(["game_id", "action_id"], kind="mergesort").reset_index(drop=True)
+    for col in ("game_id", "action_id", "player_id", "team_id", "period_id", "fold_id"):
+        values[col] = values[col].astype("int64")
+    if not np.isfinite(values[["offensive_value", "defensive_value", "vaep_value"]].to_numpy()).all():
+        raise RuntimeError("non-finite action values")
+    check_raw_against_lineups(raw, lineups, all_ids)
+    sums = values.groupby(["game_id", "player_id"])["vaep_value"].sum()
+    keyed = raw.set_index(["match_id", "player_id"])["raw_score"]
+    diff = (keyed - sums.reindex(keyed.index).fillna(0.0)).abs().max()
+    if diff > 1e-9:
+        raise RuntimeError(f"raw_score differs from the summed action values by up to {diff}")
+
+    log.info("scoring the holdout matches with the holdout model")
+    _, raw_holdout = score_games(holdout.score, lambda gid: holdout_model, actions_by_game, lineups_by_game, home_of_game, shot_xg=xg_by_event)
+    check_raw_against_lineups(raw_holdout, lineups, holdout.score)
+
+    values.to_parquet(ACTION_VALUES_PATH, index=False)
+    raw.to_parquet(RAW_VAEP_PATH, index=False)
+    raw_holdout.to_parquet(RAW_VAEP_HOLDOUT_PATH, index=False)
+    return values, raw, raw_holdout
+
+
 def main(argv=None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--labels", choices=LABEL_MODES, default=DEFAULT_LABEL_MODE,
                         help="xg: soft labels from StatsBomb shot xG (default); outcome: socceraction's binary labels")
@@ -227,35 +276,9 @@ def main(argv=None) -> int:
     del X, y
     gc.collect()
 
-    # 5. cross-fitted action values and raw scores for the whole season
-    fold_of_game = {gid: k for k, fold in enumerate(folds) for gid in fold.score}
-    home_of_game = {int(m): int(h) for m, h in zip(matches["match_id"], matches["home_team_id"])}
-    actions_by_game = {int(gid): df for gid, df in actions.groupby("game_id", sort=True)}
-    lineups_by_game = {int(mid): df for mid, df in lineups.groupby("match_id", sort=True)}
+    # 5-6. cross-fitted action values and raw scores for the season, holdout raw scores
     all_ids = sorted(int(m) for m in matches["match_id"])
-    log.info("scoring the season with the cross-fitting fold models")
-    values, raw = score_games(
-        all_ids, lambda gid: fold_models[fold_of_game[gid]], actions_by_game, lineups_by_game, home_of_game, fold_of_game
-    )
-    values = values[ACTION_VALUE_COLUMNS].sort_values(["game_id", "action_id"], kind="mergesort").reset_index(drop=True)
-    for col in ("game_id", "action_id", "player_id", "team_id", "period_id", "fold_id"):
-        values[col] = values[col].astype("int64")
-    if not np.isfinite(values[["offensive_value", "defensive_value", "vaep_value"]].to_numpy()).all():
-        raise RuntimeError("non-finite action values")
-    check_raw_against_lineups(raw, lineups, all_ids)
-    sums = values.groupby(["game_id", "player_id"])["vaep_value"].sum()
-    keyed = raw.set_index(["match_id", "player_id"])["raw_score"]
-    diff = (keyed - sums.reindex(keyed.index).fillna(0.0)).abs().max()
-    if diff > 1e-9:
-        raise RuntimeError(f"raw_score differs from the summed action values by up to {diff}")
-    values.to_parquet(ACTION_VALUES_PATH, index=False)
-    raw.to_parquet(RAW_VAEP_PATH, index=False)
-
-    # 6. holdout matches scored by the holdout model
-    log.info("scoring the holdout matches with the holdout model")
-    _, raw_holdout = score_games(holdout.score, lambda gid: holdout_model, actions_by_game, lineups_by_game, home_of_game)
-    check_raw_against_lineups(raw_holdout, lineups, holdout.score)
-    raw_holdout.to_parquet(RAW_VAEP_HOLDOUT_PATH, index=False)
+    values, raw, raw_holdout = score_and_write(matches, lineups, actions, folds, fold_models, holdout, holdout_model, xg_by_event)
 
     runtime = round(time.perf_counter() - t_start, 1)
     metrics = {

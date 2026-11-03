@@ -16,7 +16,9 @@ import logging
 import numpy as np
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.contract import POSITION_GROUPS
+from src.vaep.config import PROCESSED_DIR as _PROCESSED_DIR
 from src.vaep.config import (
     ACTION_VALUES_PATH,
     BEFORE_DIR,
@@ -30,6 +32,7 @@ from src.vaep.config import (
 )
 from src.vaep.splits import HOLDOUT_LAST_TRAIN_WEEK
 
+XG_LABELS_DIR = _PROCESSED_DIR / "xg_labels"  # frozen xG-label action values, before option 3
 log = logging.getLogger("src.vaep.report")
 
 QUANTILES = [0.01, 0.05, 0.25, 0.50, 0.75, 0.95, 0.99]
@@ -216,22 +219,68 @@ def consequences_text(values: pd.DataFrame, before: pd.DataFrame | None) -> str:
         f"{_mean(av, (av['type_name'] == 'shot') & (av['result_name'] == 'success'), 'offensive_value'):+.3f} on average "
         f"and a shot that is not scored {_mean(av, (av['type_name'] == 'shot') & (av['result_name'] == 'fail'), 'offensive_value'):+.3f}. "
         "Because a shot's state keeps its xG whatever the outcome, the drop back to a low probability happens at the "
-        "*next* action within 10 seconds (the formula zeroes the previous state after a longer gap): a keeper save "
-        f"is now worth {_mean(av, save, 'vaep_value'):+.3f} on average"
-        + (f" (before {_mean(before, before['type_name'] == 'keeper_save', 'vaep_value'):+.3f})" if before is not None else "")
-        + f", a clearance straight after a shot {_mean(av, clear_after, 'vaep_value'):+.3f}: keepers and blockers are "
-        "credited with the chances they stop, which is what lifts the goalkeepers' raw scores. "
-        "Penalties: the label of a penalty state is its constant xG (0.7835) for scored and missed kicks alike, and "
-        "socceraction's formula fixes the pre-kick probability at 0.792, so the kick itself should be worth about 0 to "
-        f"the taker; in practice it is {_mean(av, pen & (av['result_name'] == 'success'), 'offensive_value'):+.3f} when scored and "
-        f"{_mean(av, pen & (av['result_name'] == 'fail'), 'offensive_value'):+.3f} when missed, because the models under-predict "
-        f"the 91 penalty states (too few to be isolated from other shots -- a holdout experiment with `min_child_samples=20` "
-        "instead of 100 moved the mean prediction only from 0.57 to 0.62 against a label of 0.78 -- and the result one-hot "
-        "pulls missed kicks towards failed shots). "
+        "*next* action within 10 seconds (the formula zeroes the previous state after a longer gap). Under option 3 only a "
+        f"keeper save collects that drop: a save is worth {_mean(av, save, 'vaep_value'):+.3f} on average"
+        + (f" (outcome labels: {_mean(before, before['type_name'] == 'keeper_save', 'vaep_value'):+.3f})" if before is not None else "")
+        + "; any other first action after an unscored shot is measured against the chance left after the miss, so a clearance "
+        f"straight after a shot is worth {_mean(av, clear_after, 'vaep_value'):+.3f} on average. "
+        "Penalties: the label of a penalty state is its constant xG (0.7835) for scored and missed kicks alike, but the models "
+        "under-predict the 91 penalty states (too few to be isolated from other shots -- a holdout experiment with "
+        "`min_child_samples=20` instead of 100 moved the mean prediction only from 0.57 to 0.62 against a label of 0.78 -- and "
+        "the result one-hot pulls missed kicks towards failed shots), which made a converted penalty worth about -0.11 to the "
+        "taker and a miss about -0.30. Option 3 sets the P(scores) of a penalty state to the penalty's xG, so against "
+        "socceraction's fixed 0.792 pre-kick probability the kick is now worth "
+        f"{_mean(av, pen & (av['result_name'] == 'success'), 'offensive_value'):+.3f} when scored and "
+        f"{_mean(av, pen & (av['result_name'] == 'fail'), 'offensive_value'):+.3f} when missed: neutral to the taker whatever happens. "
         f"The chance's value lands where it was won: the foul that concedes the penalty is worth "
         f"{_mean(av, foul_before_pen, 'vaep_value'):+.3f} to the fouler (n={int(foul_before_pen.sum())}).\n"
     )
     return text
+
+
+def option3_text(values: pd.DataFrame, xg_dir) -> str:
+    """The section on the two scoring rules, with the frozen xG-label action values for comparison when present."""
+    from src.vaep.value import PENALTY_PRIOR
+
+    path = xg_dir / "action_values.parquet"
+    old = pd.read_parquet(path) if path.exists() else None
+
+    def rows(av: pd.DataFrame) -> dict:
+        av = av.sort_values(["game_id", "action_id"]).reset_index(drop=True)
+        prev = av.groupby("game_id")[["type_name", "result_name", "team_id", "time_seconds"]].shift(1)
+        after = (prev["type_name"].isin(["shot", "shot_penalty", "shot_freekick"]) & (prev["result_name"] != "success")
+                 & (prev["team_id"] != av["team_id"]) & ((av["time_seconds"] - prev["time_seconds"]).abs() <= 10))
+        nxt = av[after & (av["type_name"] != "keeper_save")]
+        pen = av["type_name"] == "shot_penalty"
+        return {
+            "converted penalty, value to the taker": _mean(av, pen & (av["result_name"] == "success"), "vaep_value"),
+            "missed penalty, value to the taker": _mean(av, pen & (av["result_name"] != "success"), "vaep_value"),
+            "keeper save": _mean(av, av["type_name"] == "keeper_save", "vaep_value"),
+            "first non-save action within 10 s of an opponent's unscored shot, mean": float(nxt["vaep_value"].mean()),
+            "... the same, largest": float(nxt["vaep_value"].max()),
+            "most valuable clearance": float(av.loc[av["type_name"] == "clearance", "vaep_value"].max()),
+        }
+
+    new = rows(values)
+    table = pd.DataFrame({"action": list(new), "option 3": list(new.values())})
+    if old is not None:
+        table.insert(1, "xG labels only", list(rows(old).values()))
+    return (
+        "## Scoring rules (option 3)\n\n"
+        "Decision 2026-11-02, after the re-validation (`reports/validation.md`, sections 6 and 8). The fold models, features, "
+        "labels and splits are unchanged; only the step from the predicted probabilities to the action values is "
+        "(`src/vaep/value.py`, applied by `SoftLabelVAEP.rate`):\n\n"
+        f"1. **Penalties.** The P(scores) of every `shot_penalty` state is set to that penalty's StatsBomb xG (0.7835), so the "
+        f"kick is worth xG - {PENALTY_PRIOR} to the taker, about -0.01, whether it is scored or missed.\n"
+        "2. **After an unscored shot.** The next action is measured against the shot state's P(scores) with the shot's own "
+        "chance taken out, `1 - (1 - p) / (1 - xG)` clipped to `[0, p]`, instead of against the whole state; a `keeper_save` "
+        "keeps the full drop, because the save is what stopped the chance. Shots without xG are left as they are.\n\n"
+        "Both rules use only the match's own actions, probabilities and shot xG (`rate_match` reads that match's shots from "
+        "`events.parquet`), so rating a match on its own still reproduces the season output; a test checks it.\n\n"
+        + ("Mean value of the actions the rules touch, with the frozen xG-label values (`data/processed/xg_labels/`):\n\n"
+           if old is not None else "Mean value of the actions the rules touch:\n\n")
+        + md_table(table, 3) + "\n"
+    )
 
 
 def build_report() -> str:
@@ -261,7 +310,9 @@ def build_report() -> str:
         "Actions in Soccer\", KDD 2019), as implemented in `socceraction`. "
         + (
             "Shots are valued by chance quality: the labels are built from StatsBomb expected goals instead of the "
-            "shot outcome (section *Shots valued by expected goals* below).\n"
+            "shot outcome (section *Shots valued by expected goals* below), and since 2026-11-02 two scoring rules turn the "
+            "probabilities into values without retraining (section *Scoring rules (option 3)*; the action values were "
+            "re-scored with `python -m src.vaep.score`). VAEP is the experimental rating; the baseline is the headline.\n"
             if label_mode == "xg"
             else "This run uses socceraction's binary outcome labels (`--labels outcome`).\n"
         )
@@ -312,7 +363,8 @@ def build_report() -> str:
             else "socceraction's binary outcome labels. "
         )
         + "Values: `offensive_value` = change in P(scores), `defensive_value` = -change in P(concedes), "
-        "`vaep_value` = their sum (`socceraction.vaep.formula.value`, unchanged).\n"
+        "`vaep_value` = their sum, from socceraction's formula plus the two option-3 scoring rules in `src/vaep/value.py` "
+        "(section *Scoring rules (option 3)*).\n"
         f"- Learner: `lightgbm {v['lightgbm']}` `{metrics.get('learner', 'LGBMClassifier')}`, one per label, through "
         "`src.vaep.model.SoftLabelVAEP` (a `socceraction.vaep.VAEP` subclass that replaces only fit/predict: "
         "socceraction's `VAEP.fit` builds `LGBMClassifier`s, which reject targets strictly between 0 and 1). "
@@ -350,7 +402,7 @@ def build_report() -> str:
             "the last action of the game contribute nothing (socceraction repeats the last action there, which is "
             "harmless for an OR but would multiply a final chance into the product several times). The models are "
             "then regressed on these soft labels with lightgbm's `cross_entropy` objective, and the values come from "
-            "`socceraction.vaep.formula.value` applied to the predicted probabilities, as before.\n"
+            "socceraction's formula applied to the predicted probabilities, with the two option-3 scoring rules on top (below).\n"
         )
         add(
             f"**Join to StatsBomb xG and coverage.** SPADL shot actions (`shot`, `shot_penalty`, `shot_freekick`) are joined "
@@ -374,6 +426,9 @@ def build_report() -> str:
                 "`raw_vaep.parquet` vs the frozen `before/raw_vaep.parquet`):\n"
             )
             add(md_table(correlation_table(raw, before_raw), {"default": 3, "player-matches": 0}) + "\n")
+
+    # ------------------------------------------------------------ option 3
+    add(option3_text(values, XG_LABELS_DIR))
 
     # ------------------------------------------------------------ model quality
     add("## Model quality on never-seen games\n")
@@ -423,7 +478,7 @@ def build_report() -> str:
     dist = pd.DataFrame([distribution(values["vaep_value"])])
     if before_values is not None:
         dist = pd.concat([dist, pd.DataFrame([distribution(before_values["vaep_value"])])], ignore_index=True)
-        dist.insert(0, "run", ["after (xG labels)", "before (outcome labels)"])
+        dist.insert(0, "run", ["after (xG labels, option 3)", "before (outcome labels)"])
     add(md_table(dist, {"default": 4, "n": 0}) + "\n")
     by_type = (
         values.groupby("type_name")["vaep_value"]
@@ -475,6 +530,7 @@ def build_report() -> str:
 
 
 def main() -> int:
+    use_utf8_output()
     logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     text = build_report()
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)

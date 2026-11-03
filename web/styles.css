@@ -207,6 +207,7 @@ select:disabled, .step:disabled { opacity: .55; }
   padding: 0 16px; border-radius: 999px;
   font-size: 14px; font-weight: 600; color: var(--ink-2);
 }
+.seg-tag { margin-left: 6px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .seg input:checked + span { background: var(--seg-on-bg); color: var(--seg-on-ink); }
 .seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
 .segmented:disabled { opacity: .6; }
@@ -395,12 +396,17 @@ main { padding-top: 16px; padding-bottom: 32px; }
 /* ------------------------------------------------------------------ phones */
 @media (max-width: 640px) {
   .topbar-inner, main, .site-footer { padding-left: 12px; padding-right: 12px; }
-  /* title and method toggle share the first row; the pickers sit below, labels kept for screen readers only */
-  .topbar-inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 12px; padding-top: 10px; padding-bottom: 12px; }
+  /* the title has the first row to itself; the method toggle gets its own full-width row under it, so the
+     "experimental" tag stays visible and nothing overlaps the title; the pickers sit below; labels kept for
+     screen readers only */
+  .topbar-inner { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 10px 12px; padding-top: 10px; padding-bottom: 12px; }
   .brand { grid-column: 1; grid-row: 1; }
   .tagline { display: none; }
-  .field-method { grid-column: 2; grid-row: 1; }
-  .controls { grid-column: 1 / -1; grid-row: 2; }
+  .field-method { grid-column: 1; grid-row: 2; }
+  .field-method .segmented { display: flex; width: 100%; }
+  .field-method .seg { flex: 1 1 0; }
+  .field-method .seg span { flex: 1 1 auto; justify-content: center; }
+  .controls { grid-column: 1; grid-row: 3; }
   .field { flex: 1 1 100%; }
   .field > label, .field > .label {
     position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden;
@@ -425,4 +431,4 @@ main { padding-top: 16px; padding-bottom: 32px; }
 .marker .btag-bg { fill: #ffffff; stroke: var(--pitch-halo); stroke-width: 1.5; }
 .marker .btag-text { fill: #14171a; font-size: 13px; font-weight: 800; text-anchor: middle; }
 .marker.is-baseline .pill { stroke-dasharray: 5 3; }
-@media (max-width: 640px) { .gk-note { grid-column: 1 / -1; grid-row: 3; text-align: left; } }
+@media (max-width: 640px) { .gk-note { grid-column: 1; grid-row: 4; text-align: left; } }

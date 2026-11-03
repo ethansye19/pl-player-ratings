@@ -228,9 +228,17 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   `vaep_features.parquet` / `vaep_labels.parquet`; settings and held-out AUC/Brier per split
   are in `models/vaep_metrics.json`; `python -m src.vaep.report` regenerates the report.
 - `rate.py`: `load_model_for_match(match_id)` (the fold model whose training set
-  excludes that match), `rate_match(match_id, actions, lineups, model) -> DataFrame`
+  excludes that match), `rate_match(match_id, actions, lineups, model, home_team_id=None, shot_xg=None) -> DataFrame`
   (contract; `raw_score` = sum of `vaep_value` over the player's actions in that match;
-  players in the lineup with no actions get 0.0).
+  players in the lineup with no actions get 0.0). Without `shot_xg` it reads that match's
+  shots from `events.parquet` (and only those).
+- `value.py` (decision 2026-11-02, "option 3"): probabilities become action values through
+  socceraction's formula plus two scoring rules, with no retraining: every `shot_penalty`
+  state's P(scores) is its StatsBomb xG, and the action after an unscored shot is measured
+  against the shot state's P(scores) with that shot's own chance removed, except a
+  `keeper_save`, which keeps the full drop. `SoftLabelVAEP.rate` applies it.
+  `python -m src.vaep.score` re-scores the season with the saved models (steps 5-6 of `train`).
+  VAEP is labelled experimental; the baseline is the headline rating.
 
 ### `src/scale/`
 - `scaler.py`: `class PercentileScaler` with `fit(df) -> self`, `transform(df) -> DataFrame`
