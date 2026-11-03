@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.console import use_utf8_output
 from src.explain.inputs import PROCESSED, explanation_input
 from src.explain.llm import TemplateProvider, get_provider
 from src.explain.verify import unsupported_numbers, verify_numbers
@@ -43,6 +44,7 @@ def explain(match_id: int, player_id: int, method: str, k: int = 5, processed_di
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--match", type=int, required=True)
     parser.add_argument("--player", type=int, required=True)

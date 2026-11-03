@@ -23,6 +23,7 @@ from socceraction import spadl
 from socceraction.data.statsbomb import StatsBombLoader
 from socceraction.spadl.statsbomb import convert_to_actions
 
+from src.console import use_utf8_output
 from src.contract import POSITION_GROUPS
 from src.ingest.download import COMPETITION_ID, RAW_ROOT, SEASON_ID
 from src.ingest.events import TypeRegistry, flatten_match_events, records_to_table
@@ -276,6 +277,7 @@ def write_report(summary: dict[str, Any], out_dir: Path) -> None:
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--raw", type=Path, default=RAW_ROOT)
     parser.add_argument("--out", type=Path, default=PROCESSED)

@@ -16,6 +16,7 @@ import time
 
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.vaep.config import ACTIONS_PATH, HOLDOUT_MODEL_PATH, LINEUPS_PATH, MATCHES_PATH, SPLITS_PATH, fold_model_path
 from src.vaep.labels import shot_xg_lookup
 from src.vaep.model import load_model
@@ -36,6 +37,7 @@ def recorded_splits(payload: dict) -> tuple[Split, list[Split]]:
 
 
 def main(argv=None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)

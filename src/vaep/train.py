@@ -33,6 +33,7 @@ from importlib.metadata import version
 import numpy as np
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.contract import SEED, validate_contract
 from src.vaep.config import (
     ACTION_VALUE_COLUMNS,
@@ -221,6 +222,7 @@ def score_and_write(matches, lineups, actions, folds, fold_models, holdout, hold
 
 
 def main(argv=None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--labels", choices=LABEL_MODES, default=DEFAULT_LABEL_MODE,
                         help="xg: soft labels from StatsBomb shot xG (default); outcome: socceraction's binary labels")

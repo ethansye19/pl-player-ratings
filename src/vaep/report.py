@@ -16,6 +16,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.contract import POSITION_GROUPS
 from src.vaep.config import PROCESSED_DIR as _PROCESSED_DIR
 from src.vaep.config import (
@@ -529,6 +530,7 @@ def build_report() -> str:
 
 
 def main() -> int:
+    use_utf8_output()
     logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     text = build_report()
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)

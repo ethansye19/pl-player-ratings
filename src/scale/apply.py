@@ -27,6 +27,7 @@ from typing import Sequence
 
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.contract import validate_contract
 from src.scale.scaler import PercentileScaler
 from src.scale.summary import format_cli_summary
@@ -60,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    use_utf8_output()
     args = build_parser().parse_args(argv)
     processed = Path(args.processed)
     raw_path = processed / f"raw_{args.method}.parquet"

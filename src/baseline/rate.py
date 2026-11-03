@@ -15,6 +15,7 @@ import time
 import numpy as np
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.baseline.stats import EVENT_COLUMNS, KEY_COLUMNS, player_match_stats, select_match
 from src.baseline.weights import STATS, WEIGHTS, weight_of
 from src.contract import CONTRACT_COLUMNS, POSITION_GROUPS, validate_contract
@@ -137,6 +138,7 @@ def summary(raw: pd.DataFrame, stats: pd.DataFrame) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description="Compute baseline per-match stats and raw scores for 2015/16.")
     parser.add_argument("--processed-dir", default=str(PROCESSED_DIR), help="folder with the processed parquet files")
     parser.add_argument("--chunk-size", type=int, default=20, help="matches per events read")

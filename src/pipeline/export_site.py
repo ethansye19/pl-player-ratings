@@ -30,6 +30,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 
+from src.console import use_utf8_output
 from src.pipeline.export_web import SEASON, SOURCE_STATSBOMB, export_season, season_dir, validate_payload
 
 log = logging.getLogger(__name__)
@@ -147,6 +148,7 @@ def verify_site(out_dir: str | pathlib.Path) -> list:
 
 
 def main(argv: list | None = None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(prog="python -m src.pipeline.export_site",
                                      description="Build (or verify) the public GitHub Pages site: the page plus the "
                                                  "2015/16 StatsBomb payloads only.")

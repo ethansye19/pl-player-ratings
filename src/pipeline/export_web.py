@@ -36,6 +36,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.contract import MIN_MINUTES, POSITION_GROUPS, RATING_DECIMALS, RATING_MAX, RATING_MIN
 
 log = logging.getLogger(__name__)
@@ -405,6 +406,7 @@ def export_season(out_dir: str | pathlib.Path = "web/data", processed_dir: str |
 
 
 def main(argv: list | None = None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(prog="python -m src.pipeline.export_web",
                                      description="Export the per-match JSON payloads the match-ratings page loads.")
     parser.add_argument("--out", default="web/data", help="output folder (default: web/data)")

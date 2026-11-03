@@ -19,6 +19,7 @@ import time
 
 import pandas as pd
 
+from src.console import use_utf8_output
 from src.contract import MIN_MINUTES, POSITION_GROUPS
 from src.validation import analysis, before_after, checks, option3
 from src.validation.data import METHODS, REPORT_PATH, Data, fmt, load, load_xg_labels, md_table
@@ -691,6 +692,7 @@ def build_report(skip_tests: bool = False) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description="Regenerate reports/validation.md (read-only on data/processed).")
     parser.add_argument("--skip-tests", action="store_true", help="do not run the pytest suite")
     parser.add_argument("--out", default=str(REPORT_PATH), help="output path (default reports/validation.md)")
