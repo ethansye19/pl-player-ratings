@@ -55,9 +55,11 @@ def _tree(root, venv_template, with_python=True):
     return root
 
 
-def _run(tree, mode, notify="log"):
-    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "VIRTUAL_ENV")}
-    env.update(STUB_MODE=mode, RATING_SYSTEM_NOTIFY=notify)
+def _run(tree, mode, notify="log", extra_env=None):
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "VIRTUAL_ENV", "RATING_SYSTEM_NOTIFY", "RATING_SYSTEM_PUSH_KEY")}
+    env.update(STUB_MODE=mode, **(extra_env or {}))
+    if notify is not None:
+        env["RATING_SYSTEM_NOTIFY"] = notify
     proc = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(tree / "scripts" / "run_gameweek.ps1")],
                           env=env, capture_output=True, timeout=300)
     log = (tree / "logs" / "pipeline.log").read_text(encoding="utf-8-sig")
@@ -103,3 +105,41 @@ def test_a_notification_that_fails_changes_neither_the_exit_code_nor_the_log(tmp
     assert code == 1
     assert "run_gameweek end (exit 1)" in log
     assert "notification could not be shown: simulated notification failure" in log
+
+
+@pytest.fixture
+def notifications_switched_off():
+    """A temporary HKCU registry key standing in for Windows' PushNotifications key, with ToastEnabled = 0
+    (the main notifications switch off). The real setting is never read or changed; the key is removed afterwards."""
+    import uuid
+    import winreg
+
+    parent = r"Software\RatingSystemTests"
+    run_key = rf"{parent}\{uuid.uuid4().hex}"
+    path = rf"{run_key}\PushNotifications"
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, path) as key:
+        winreg.SetValueEx(key, "ToastEnabled", 0, winreg.REG_DWORD, 0)
+    yield {"RATING_SYSTEM_PUSH_KEY": "HKCU:\\" + path}
+    for sub in (path, run_key, parent):
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, sub)
+        except OSError:
+            pass  # the parent stays if another test run is using it
+
+
+@pytest.mark.parametrize("mode", ["checks", "crash"])
+def test_switched_off_notifications_are_logged_as_not_displayed(tmp_path, venv_template, notifications_switched_off, mode):
+    """Notifications on in the script (no test mode), but the Windows switch is off: the log must not claim 'shown'."""
+    code, log = _run(_tree(tmp_path, venv_template), mode, notify=None, extra_env=notifications_switched_off)
+    assert code == 1, "the exit code does not change"
+    assert "notification not displayed: Windows notifications are switched off" in log
+    assert "Rating pipeline failed (exit 1)" in log.split("not displayed")[1]
+    assert "notification shown" not in log and "could not be shown" not in log
+    assert log.index("run_gameweek end (exit 1)") < log.index("not displayed")
+
+
+def test_a_missing_venv_python_with_notifications_switched_off_still_exits_1(tmp_path, venv_template, notifications_switched_off):
+    tree = _tree(tmp_path, venv_template, with_python=False)
+    code, log = _run(tree, "published", notify=None, extra_env=notifications_switched_off)
+    assert code == 1
+    assert "notification not displayed: Windows notifications are switched off" in log and "venv python not found" in log

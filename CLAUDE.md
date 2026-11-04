@@ -336,7 +336,9 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   and regression guard (`state.json`) make reruns safe. Any non-zero exit (checks failed, a
   Python traceback, the venv Python missing) shows a Windows notification with the first failure
   line and the log path, after the log is written; exit 0 is silent and a notification failure
-  never changes the exit code. `RATING_SYSTEM_NOTIFY=log|fail` exists for
+  never changes the exit code. If the main Windows notifications switch is off (`ToastEnabled`
+  = 0), the log says "not displayed: Windows notifications are switched off" instead of
+  "notification shown". `RATING_SYSTEM_NOTIFY=log|fail` and `RATING_SYSTEM_PUSH_KEY` exist for
   `tests/test_run_gameweek_script.py` (Windows only).
 - `export_web.py`: `match_payload(match_id) -> dict` (2015/16, both methods),
   `validate_payload(payload)` (raises `ValueError`), `export_season(out_dir=web/data)`
