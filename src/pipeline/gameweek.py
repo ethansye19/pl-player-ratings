@@ -9,10 +9,15 @@ them (season-to-date reference), rate the target gameweek, run the validity chec
 only if every check passes, write one web payload per fixture plus ``index.json``.
 If a check fails nothing is written and the failures are printed (exit code 1).
 
-Double gameweeks: a player's ``explain`` block lists each fixture with the stats FPL
-itemises per fixture (minutes, goals, assists, clean sheets, goals conceded, cards,
-saves, penalties, own goals); stats FPL only reports per gameweek (xG, xGC, tackles,
-CBI, recoveries) are split across the player's fixtures in proportion to minutes.
+Per fixture: the live feed has one total per player per gameweek and only knows his
+current club. A player who played exactly one fixture, for the club he had already joined
+(``team_join_date`` before the kickoff), takes those totals. Every other player who played
+(a double gameweek, or a club that may have changed since) takes his element-summary
+``history``: one row per fixture with starts, minutes, saves, goals conceded, tackles,
+recoveries, CBI, xG, xG conceded and the other mapped stats, and his club from the
+fixture, ``was_home`` and ``opponent_team``. Those rows must add up to his gameweek totals.
+A missing response, row or field, or a total that does not add up, fails the run and
+nothing is written: no stat is split, estimated or read as 0.
 """
 from __future__ import annotations
 
@@ -55,10 +60,9 @@ DEFAULT_OUT = Path("web") / "data" / "current"
 SOURCE = "Fantasy Premier League API"
 CREDITS = "Data: Fantasy Premier League API (https://fantasy.premierleague.com)"
 GAMEWEEK_MEAN_TOLERANCE = 0.3  # single gameweek; the +/- 0.1 rule is for a full season
-PER_FIXTURE_IDENTIFIERS = {
-    "minutes", "goals_scored", "assists", "clean_sheets", "goals_conceded", "own_goals", "penalties_saved",
-    "penalties_missed", "yellow_cards", "red_cards", "saves",
-}
+# the numbers taken per fixture (live totals for one fixture, else element-summary history rows)
+PER_FIXTURE_FIELDS = (FPL_MINUTES_FIELD, FPL_STARTS_FIELD) + tuple(dict.fromkeys(FPL_STAT_MAP.values()))
+DECIMAL_TOLERANCE = 0.015  # xG fields come rounded to 2 decimals, per fixture and per gameweek
 
 
 @dataclass
@@ -97,26 +101,84 @@ def existing_state(out_dir: Path | str) -> dict[str, Any] | None:
         return None
 
 
-def _num(value: Any) -> float:
-    if value is None:
-        return 0.0
-    return float(value)
+def _number(source: dict[str, Any], field: str, where: str, problems: list[str]) -> float | None:
+    """A numeric field, or None with a problem recorded. Missing data is never read as 0."""
+    value = source.get(field)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        problems.append(f"{where}: '{field}' is missing")
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        problems.append(f"{where}: '{field}' is not a number ({value!r})")
+        return None
 
 
-def _player_fixtures(element: dict[str, Any], fixture_ids: set[int]) -> list[tuple[int, int]]:
-    """[(fixture_id, minutes)] from the explain block, falling back to the gameweek total."""
-    out = []
-    for block in element.get("explain") or []:
-        fid = int(block["fixture"])
-        if fid not in fixture_ids:
-            continue
-        minutes = next((int(s["value"]) for s in block.get("stats", []) if s.get("identifier") == "minutes"), None)
-        out.append((fid, minutes if minutes is not None else int(element["stats"].get(FPL_MINUTES_FIELD, 0))))
-    return out
+def history_reason(element: dict[str, Any], fixtures: list[dict[str, Any]]) -> str | None:
+    """Why the gameweek feed cannot give this player's per-fixture numbers and club, or None when it can.
+
+    The live feed holds one total per player per gameweek and only knows his current club. It is
+    enough for exactly one fixture played for the club he had already joined; anything else needs
+    the player's element-summary history.
+    """
+    if len(fixtures) > 1:
+        return "more than one fixture in the gameweek"
+    fixture = fixtures[0]
+    if int(element["team"]) not in (int(fixture["team_h"]), int(fixture["team_a"])):
+        return "his current club did not play the fixture"
+    joined = str(element.get("team_join_date") or "")[:10]
+    if not joined:
+        return "no team_join_date for his current club"
+    if joined >= str(fixture.get("kickoff_time") or "")[:10]:
+        return "he joined his current club on or after the fixture"
+    return None
 
 
-def gameweek_frame(gw: int, client: FplClient, bootstrap: dict[str, Any]) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
-    """Contract frame (+ team_id, is_starter, side, stat columns) for one gameweek, and its fixtures."""
+def club_from_history(fixture: dict[str, Any], row: dict[str, Any], where: str, problems: list[str]) -> int | None:
+    """The player's club in this fixture: the home side if ``was_home``, else the away side; ``opponent_team`` must be the other."""
+    was_home, opponent = row.get("was_home"), row.get("opponent_team")
+    if was_home is None or opponent is None:
+        problems.append(f"{where}: 'was_home' or 'opponent_team' is missing")
+        return None
+    home, away = int(fixture["team_h"]), int(fixture["team_a"])
+    club, other = (home, away) if bool(was_home) else (away, home)
+    if int(opponent) != other:
+        problems.append(f"{where}: opponent_team {opponent} does not match fixture {fixture['id']} ({home} v {away}, was_home={was_home})")
+        return None
+    return club
+
+
+def _row(base: dict[str, Any], fixture: dict[str, Any], club: int, values: dict[str, float], teams: dict[int, dict], source: str) -> dict[str, Any]:
+    row = {
+        **base,
+        "match_id": int(fixture["id"]),
+        "team": teams[club]["name"],
+        "team_id": club,
+        "minutes": values[FPL_MINUTES_FIELD],
+        "is_starter": values[FPL_STARTS_FIELD] >= 1,
+        "side": "home" if club == int(fixture["team_h"]) else "away",
+        "per_fixture_source": source,
+    }
+    for stat, fpl_field in FPL_STAT_MAP.items():
+        row[stat] = values[fpl_field]
+    return row
+
+
+def gameweek_frame(
+    gw: int, client: FplClient, bootstrap: dict[str, Any], histories: dict[int, Any] | None = None
+) -> tuple[pd.DataFrame, list[dict[str, Any]], list[str]]:
+    """Contract frame (+ team_id, is_starter, side, stat columns) for one gameweek, its fixtures and its problems.
+
+    One row per player per fixture he played. A player for whom :func:`history_reason` is None takes
+    the live feed's numbers, which for one fixture are that fixture's numbers. Every other player who
+    played takes the rows of his element-summary ``history`` for the gameweek's fixtures (starts,
+    minutes and every mapped stat per fixture, the club from ``was_home`` and ``opponent_team``),
+    and those rows must add up to his live totals. A missing response, row or field, or a total that
+    does not add up, is returned as a problem; nothing is split, estimated or read as 0.
+    ``histories`` caches element-summary responses (or the error) across the gameweeks of one run.
+    """
+    histories = {} if histories is None else histories
+    problems: list[str] = []
     fixtures = [f for f in client.fixtures(gw) if f.get("finished")]
     fixture_by_id = {int(f["id"]): f for f in fixtures}
     teams = {int(t["id"]): t for t in bootstrap["teams"]}
@@ -125,54 +187,74 @@ def gameweek_frame(gw: int, client: FplClient, bootstrap: dict[str, Any]) -> tup
 
     rows = []
     for item in live["elements"]:
-        stats = item["stats"]
-        total_minutes = int(stats.get(FPL_MINUTES_FIELD, 0) or 0)
-        if total_minutes <= 0:
+        eid = int(item["id"])
+        stats = item.get("stats") or {}
+        total_minutes = _number(stats, FPL_MINUTES_FIELD, f"player {eid}", problems)
+        if total_minutes is None or total_minutes <= 0:
             continue
-        element = elements.get(int(item["id"]))
+        element = elements.get(eid)
         if element is None:
+            problems.append(f"player {eid} played {total_minutes:g} minutes but is not in bootstrap-static")
             continue
-        played = _player_fixtures(item, set(fixture_by_id))
-        if not played:
+        name = element.get("known_name") or element.get("web_name") or f"{element.get('first_name', '')} {element.get('second_name', '')}".strip()
+        who = f"{name} (player {eid})"
+        played_in = [fixture_by_id[int(b["fixture"])] for b in item.get("explain") or [] if int(b["fixture"]) in fixture_by_id]
+        if not played_in:
+            problems.append(f"{who} played {total_minutes:g} minutes but the feed names no finished fixture of the gameweek")
             continue
-        per_fixture_itemised = {
-            int(b["fixture"]): {s["identifier"]: _num(s.get("value")) for s in b.get("stats", [])}
-            for b in item.get("explain") or []
-        }
-        team_id = int(element["team"])
-        group = FPL_POSITION_GROUPS[int(element["element_type"])]
-        for fid, minutes in played:
-            if minutes <= 0:
-                continue
-            fixture = fixture_by_id[fid]
-            share = minutes / total_minutes if total_minutes else 1.0
-            itemised = per_fixture_itemised.get(fid, {})
-            row: dict[str, Any] = {
-                "match_id": fid,
-                "player_id": int(element["id"]),
-                "player_name": element.get("known_name") or element.get("web_name") or f"{element.get('first_name', '')} {element.get('second_name', '')}".strip(),
-                "team": teams[team_id]["name"],
-                "team_id": team_id,
-                "position_group": group,
-                "minutes": float(minutes),
-                "is_starter": bool(int(stats.get(FPL_STARTS_FIELD, 0) or 0) >= 1) if len(played) == 1 else bool(itemised.get("starts", stats.get(FPL_STARTS_FIELD, 0))),
-                "side": "home" if int(fixture["team_h"]) == team_id else "away",
-                "position": element.get("element_type"),
-                "jersey_number": element.get("squad_number"),
-            }
-            for stat, fpl_field in FPL_STAT_MAP.items():
-                if len(played) == 1:
-                    value = _num(stats.get(fpl_field))
-                elif fpl_field in PER_FIXTURE_IDENTIFIERS:
-                    value = itemised.get(fpl_field, 0.0)
-                else:
-                    value = _num(stats.get(fpl_field)) * share
-                row[stat] = value
-            rows.append(row)
+        base = {"player_id": eid, "player_name": name, "position_group": FPL_POSITION_GROUPS[int(element["element_type"])],
+                "position": element.get("element_type"), "jersey_number": element.get("squad_number")}
+        reason = history_reason(element, played_in)
+        if reason is None:
+            values = {f: _number(stats, f, who, problems) for f in PER_FIXTURE_FIELDS}
+            if all(v is not None for v in values.values()):
+                rows.append(_row(base, played_in[0], int(element["team"]), values, teams, "live"))
+            continue
 
+        if eid not in histories:
+            try:
+                histories[eid] = client.element_summary(eid)
+            except Exception as exc:  # any failure to get it is a check failure, reported below
+                histories[eid] = exc
+        summary = histories[eid]
+        if isinstance(summary, Exception):
+            problems.append(f"{who}: element-summary is needed ({reason}) but could not be read: {type(summary).__name__}: {summary}")
+            continue
+        history = [h for h in (summary or {}).get("history") or [] if int(h.get("fixture", -1)) in fixture_by_id]
+        have = {int(h["fixture"]) for h in history}
+        missing = [int(f["id"]) for f in played_in if int(f["id"]) not in have]
+        if missing:
+            problems.append(f"{who}: element-summary has no history row for fixture {', '.join(map(str, missing))} ({reason})")
+            continue
+        per_fixture, ok = [], True
+        for h in history:
+            fixture = fixture_by_id[int(h["fixture"])]
+            where = f"{who}, fixture {fixture['id']}"
+            values = {f: _number(h, f, where, problems) for f in PER_FIXTURE_FIELDS}
+            club = club_from_history(fixture, h, where, problems)
+            ok = ok and club is not None and all(v is not None for v in values.values())
+            per_fixture.append((fixture, club, values))
+        if not ok:
+            continue
+        for field in PER_FIXTURE_FIELDS:
+            total = _number(stats, field, who, problems)
+            got = sum(v[field] for _, _, v in per_fixture)
+            tolerance = DECIMAL_TOLERANCE if field in FPL_DECIMAL_FIELDS else 1e-9
+            if total is None:
+                ok = False
+            elif abs(got - total) > tolerance:
+                problems.append(f"{who}: the per-fixture '{field}' add up to {got:g} but the gameweek total is {total:g}")
+                ok = False
+        if not ok:
+            continue
+        for fixture, club, values in per_fixture:
+            if values[FPL_MINUTES_FIELD] > 0:
+                rows.append(_row(base, fixture, club, values, teams, "element-summary"))
+
+    if not rows:
+        problems.append("no player appearances in the live feed")
+        return pd.DataFrame(), fixtures, problems
     frame = pd.DataFrame(rows)
-    if frame.empty:
-        raise RuntimeError(f"gameweek {gw}: no player appearances in the live feed")
     weights = {g: {s: w.weight for s, w in table.items()} for g, table in FPL_WEIGHTS.items()}
     frame["raw_score"] = [
         sum(weights[r.position_group].get(stat, 0.0) * float(getattr(r, stat)) for stat in FPL_STAT_MAP) for r in frame.itertuples(index=False)
@@ -181,7 +263,7 @@ def gameweek_frame(gw: int, client: FplClient, bootstrap: dict[str, Any]) -> tup
     frame["player_id"] = frame["player_id"].astype("int64")
     frame = frame.sort_values(["match_id", "team", "player_id"]).reset_index(drop=True)
     validate_contract(frame)
-    return frame, fixtures
+    return frame, fixtures, problems
 
 
 def run_checks(
@@ -310,13 +392,22 @@ def run(
         return RunResult(target, False, [f"gameweek {target} is not finished and data-checked"])
     teams = {int(t["id"]): t for t in bootstrap["teams"]}
 
-    frames, fixtures_by_gw = [], {}
+    frames, fixtures_by_gw, problems = [], {}, []
+    histories: dict[int, Any] = {}  # element-summary responses, fetched at most once per player per run
     for g in done:
-        frame, fixtures = gameweek_frame(g, client, bootstrap)
-        frame["gameweek"] = g
-        frames.append(frame)
+        frame, fixtures, gw_problems = gameweek_frame(g, client, bootstrap, histories)
+        problems += [f"gameweek {g}: {p}" for p in gw_problems]
         fixtures_by_gw[g] = fixtures
-        log.info("gameweek %d: %d fixtures, %d appearances", g, len(fixtures), len(frame))
+        if not frame.empty:
+            frame["gameweek"] = g
+            frames.append(frame)
+            log.info("gameweek %d: %d fixtures, %d appearances", g, len(fixtures), len(frame))
+    fetched = sum(1 for v in histories.values() if not isinstance(v, Exception))
+    log.info("element-summary used for %d players (%d could not be read)", fetched, len(histories) - fetched)
+    if problems:
+        for f in problems:
+            log.error("check failed: %s", f)
+        return RunResult(target, False, problems, [], None)
     season_rows = pd.concat(frames, ignore_index=True)
     scaler = PercentileScaler().fit(season_rows[CONTRACT_COLUMNS])
     target_rows = season_rows[season_rows["gameweek"] == target].reset_index(drop=True)

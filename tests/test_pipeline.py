@@ -33,7 +33,7 @@ def make_fake_fpl(n_teams: int = 20, gameweeks=(1, 2), seed: int = SEED, drop_te
         for slot, etype in enumerate(SQUAD):
             elements.append({"id": eid, "web_name": f"Synth{eid}", "first_name": "Synthetic",
                              "second_name": f"Player {eid}", "team": t, "element_type": etype,
-                             "status": "a", "squad_slot": slot})
+                             "status": "a", "squad_slot": slot, "team_join_date": "2025-07-01"})
             eid += 1
     bootstrap = {
         "events": [{"id": gw, "name": f"Gameweek {gw}", "finished": True, "data_checked": True} for gw in gameweeks]
@@ -91,11 +91,45 @@ def make_fake_fpl(n_teams: int = 20, gameweeks=(1, 2), seed: int = SEED, drop_te
     return bootstrap, fixtures, live
 
 
+HISTORY_KEYS_NOT_IN_LIVE = {"in_dreamteam", "played"}  # live-feed stats that element-summary history rows do not carry
+
+
+def fake_history_rows(element: dict, fixtures: dict, live: dict) -> list:
+    """SYNTHETIC element-summary ``history`` rows for every single-fixture gameweek of ``element``, shaped like the
+    real API's: one row per fixture with the player's numbers, opponent_team and was_home for his club then."""
+    rows = []
+    for gw in sorted(live):
+        item = next((e for e in live[gw]["elements"] if e["id"] == element["id"]), None)
+        if item is None or len(item["explain"]) != 1:
+            continue  # multi-fixture gameweeks are supplied explicitly by the tests that build them
+        f = next(f for f in fixtures[gw] if f["id"] == item["explain"][0]["fixture"])
+        was_home = f["team_h"] == element["team"]
+        row = {"element": element["id"], "fixture": f["id"], "round": gw, "kickoff_time": f["kickoff_time"],
+               "opponent_team": f["team_a"] if was_home else f["team_h"], "was_home": was_home,
+               "team_h_score": f["team_h_score"], "team_a_score": f["team_a_score"], "modified": False,
+               "value": 50, "selected": 1000, "transfers_balance": 0, "transfers_in": 0, "transfers_out": 0}
+        row.update({k: v for k, v in item["stats"].items() if k not in HISTORY_KEYS_NOT_IN_LIVE})
+        rows.append(row)
+    return rows
+
+
 class FakeFplClient:
     """Implements the FplClient protocol from CLAUDE.md with synthetic payloads."""
 
     def __init__(self, **kwargs):
         self._bootstrap, self._fixtures, self._live = make_fake_fpl(**kwargs)
+        self.histories = {}  # element id -> SYNTHETIC element-summary payload (or an exception) set by a test
+        self.summary_calls = []
+
+    def element_summary(self, element_id: int) -> dict:
+        self.summary_calls.append(int(element_id))
+        supplied = self.histories.get(int(element_id))
+        if isinstance(supplied, Exception):
+            raise supplied
+        if supplied is not None:
+            return supplied
+        element = next(e for e in self._bootstrap["elements"] if e["id"] == int(element_id))
+        return {"fixtures": [], "history": fake_history_rows(element, self._fixtures, self._live), "history_past": []}
 
     def bootstrap(self) -> dict:
         return self._bootstrap
