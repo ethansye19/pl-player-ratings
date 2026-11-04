@@ -248,7 +248,7 @@ number check and falls back to the template text if it fails. It is not used by 
 `python -m src.pipeline.gameweek` rates the latest finished gameweek of the current Premier
 League season from three endpoints of the official Fantasy Premier League API:
 `bootstrap-static` (gameweeks, teams, players), `fixtures/?event=<gw>` and
-`event/<gw>/live` (every player's stats, itemised per fixture). FPL publishes per-gameweek
+`event/<gw>/live` (every player's totals for the gameweek). FPL publishes per-gameweek
 totals rather than events, so only the baseline method runs, and only **15 of its 35 stats**
 exist there (`reports/fpl_mapping.md` lists every stat, its FPL field or the reason FPL lacks
 it, and the two weight adjustments this forces). The scaler is fitted on all finished
@@ -257,6 +257,16 @@ every team with a fixture has rated players, each side of every fixture has 11 s
 the FPL data and every starter with 10 or more minutes is rated, ratings are finite and in
 range with one decimal, and the gameweek mean is within 6.5 ± 0.3. Teams without a fixture
 are not required, so a blank gameweek still publishes.
+
+Each player gets one row per fixture. The gameweek totals are used only when a player played
+exactly one fixture, for the club he had already joined. For everyone else who played, in a
+double gameweek or after a transfer, the pipeline fetches that player's `element-summary`
+history once, politely (at most one request a second), and takes starts, minutes, saves,
+goals conceded, tackles, recoveries, CBI, xG and xG conceded per fixture, and the club from the
+fixture, `was_home` and `opponent_team`. Those rows must add up to the gameweek totals; if they
+do not, or a response or field is missing, the run fails and writes nothing. No stat is split
+between fixtures or read as 0. A replay of gameweeks 1-8 moved five transferred players to the
+clubs they played for and changed no rating (`reports/fpl_mapping.md`).
 
 A PowerShell wrapper (`scripts/run_gameweek.ps1`) runs it from Task Scheduler once a day. It
 does nothing when the latest finished gameweek is already published, writes nothing when a

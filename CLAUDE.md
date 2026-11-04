@@ -292,7 +292,9 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
 ### `src/pipeline/`
 - `fpl.py`: `FplClient` protocol — `bootstrap() -> dict` (`/api/bootstrap-static/`),
   `fixtures(gw) -> list[dict]` (`/api/fixtures/?event=<gw>`), `live(gw) -> dict`
-  (`/api/event/<gw>/live/`); `HttpFplClient` implements it;
+  (`/api/event/<gw>/live/`), `element_summary(id) -> dict` (`/api/element-summary/<id>/`,
+  `history` = one row per fixture); `HttpFplClient` implements it (at most one request a
+  second, generic User-Agent, retries, `Retry-After` on 429, mirrors under `data/raw/fpl/`);
   `latest_finished_gameweek(bootstrap) -> int` (highest event with `finished` and
   `data_checked` true). Tests use a fake client (`tests/test_pipeline.py`) whose payload
   shapes mirror the real API; the pipeline agent may add stat fields to the fake but
@@ -311,7 +313,13 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   both teams with exactly 11 starters in the FPL data and every starter rated unless
   < 10 minutes (decision 2026-11-02: no fixed 20-team rule), ratings finite, within
   bounds, one decimal, gameweek mean within 6.5 ± 0.3 (single-gameweek tolerance,
-  documented). `run(client, out_dir, gw=None) -> RunResult(gameweek, ok, failures, written)`:
+  documented). Per fixture (decision 2026-11-03): `gameweek_frame` gives one row per player per
+  fixture; live totals only for a single fixture played for the club he had already joined
+  (`team_join_date` before the kickoff), else the player's element-summary history rows (all
+  per-fixture numbers; club from `was_home`/`opponent_team`), which must add up to his live
+  totals. Missing data or totals that do not add up are check failures (nothing written);
+  never split, estimate or read missing data as 0.
+  `run(client, out_dir, gw=None) -> RunResult(gameweek, ok, failures, written)`:
   fits the scaler on all finished gameweeks of the season so far, rates the target
   gameweek (latest finished when `gw` is None), runs the checks, and **writes nothing
   if any check fails**; on success writes `<out_dir>/index.json` (one entry per
