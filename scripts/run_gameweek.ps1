@@ -9,8 +9,13 @@
 #     missing) it shows a Windows notification with the first failure line and the log path.
 #     Exit 0 stays silent. The log is written before the notification is attempted, and a
 #     notification that cannot be shown is only logged: it never changes the exit code.
+#     If the main Windows notifications switch is off (Settings > System > Notifications, i.e.
+#     ToastEnabled = 0 under HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications),
+#     Windows would drop the notification silently, so the log says "not displayed: Windows
+#     notifications are switched off" instead of "notification shown".
 #     RATING_SYSTEM_NOTIFY=log writes the notification to the log instead of showing it, and
-#     RATING_SYSTEM_NOTIFY=fail simulates a broken notification API (both used by the tests).
+#     RATING_SYSTEM_NOTIFY=fail simulates a broken notification API; RATING_SYSTEM_PUSH_KEY
+#     points the switch check at another registry key (all three used by the tests).
 #
 # Schedule it with Task Scheduler (see README, "Step 6") or run it by hand:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_gameweek.ps1
@@ -38,6 +43,13 @@ function Get-FailureLine($lines, [int]$code) {
     return "exit code $code with no output"
 }
 
+function Test-WindowsNotificationsOff {
+    # the main switch in Settings > System > Notifications; a missing value means on (the Windows default)
+    $key = if ($env:RATING_SYSTEM_PUSH_KEY) { $env:RATING_SYSTEM_PUSH_KEY } else { 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications' }
+    $value = (Get-ItemProperty -Path $key -Name ToastEnabled -ErrorAction SilentlyContinue).ToastEnabled
+    return ($null -ne $value -and [int]$value -eq 0)
+}
+
 function Send-FailureNotification([int]$code, [string]$detail) {
     # never throws: whatever happens here, the caller still exits with $code
     try {
@@ -48,6 +60,10 @@ function Send-FailureNotification([int]$code, [string]$detail) {
             return
         }
         if ($env:RATING_SYSTEM_NOTIFY -eq "fail") { throw "simulated notification failure (RATING_SYSTEM_NOTIFY=fail)" }
+        if (Test-WindowsNotificationsOff) {
+            Write-Log "notification not displayed: Windows notifications are switched off (Settings > System > Notifications): $title | $detail"
+            return
+        }
         [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
         [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
         $esc = { param($s) [System.Security.SecurityElement]::Escape($s) }

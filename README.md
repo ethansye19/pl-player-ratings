@@ -275,7 +275,9 @@ does nothing when the latest finished gameweek is already published, writes noth
 check fails, and refuses to replace published output with an older gameweek or with fewer
 fixtures or rated rows. When a run fails, whether a check failed, Python crashed or the venv is
 missing, the wrapper also shows a Windows notification with the first failure line and the path
-of `logs/pipeline.log`. A run that publishes or has nothing to do stays silent. Current-season
+of `logs/pipeline.log`. A run that publishes or has nothing to do stays silent. If the main
+Windows notifications switch is off, Windows would drop the notification, so the log says it was
+not displayed instead. Current-season
 output lives under `web/data/current/`, which is local only: the public page carries the 2015/16
 season.
 
