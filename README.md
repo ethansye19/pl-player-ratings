@@ -1,5 +1,7 @@
 # Premier League player ratings
 
+[![tests](https://github.com/ethansye19/pl-player-ratings/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/ethansye19/pl-player-ratings/actions/workflows/tests.yml)
+
 Match-by-match player ratings on a **3.0–10.0 scale** for every Premier League match of
 2015/16. The **headline rating is the baseline**; a second, experimental method runs alongside
 for comparison:
@@ -327,6 +329,12 @@ py -3.11 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt   # fully pinned
 .venv\Scripts\python -m pytest -q -m "not data"           # tests that need no downloaded data
 ```
+
+GitHub Actions runs those same tests (`pytest -m "not data"`) with Python 3.11 on Windows for
+every push and pull request to `main` (`.github/workflows/tests.yml`), with no secrets and no
+network access in the tests. The tests marked `data` cannot run there: they check the processed
+2015/16 season, and `data/` is never committed. Run the full suite locally after building the
+data (below).
 
 Reproduce the 2015/16 ratings from scratch (the download is about 1.1 GB; VAEP training
 takes a few minutes):

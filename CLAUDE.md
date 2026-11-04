@@ -51,6 +51,9 @@ current-season gameweek pipeline (baseline only, from the FPL API).
 - Install: `.venv/Scripts/python -m pip install -r requirements.txt` (fully pinned).
 - Tests: `.venv/Scripts/python -m pytest -q` (everything),
   `-m "not data"` (no processed data needed), `-m data` (data-backed rule tests).
+  CI (`.github/workflows/tests.yml`, GitHub Actions, Windows, Python 3.11) runs
+  `pytest -m "not data"` on every push and pull request to `main`; `data` tests run only
+  locally because `data/` is never committed. Keep CI free of secrets and network calls.
 - pandas is **1.5.x**: no pandas-2-only APIs (no `pd.ArrowDtype`, no copy-on-write,
   `DataFrame.map` doesn't exist — use `applymap`), numpy is 1.26.
 - VAEP learner: `lightgbm` (installed). xgboost is not installed.
