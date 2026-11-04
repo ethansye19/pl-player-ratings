@@ -51,6 +51,9 @@ current-season gameweek pipeline (baseline only, from the FPL API).
 - Install: `.venv/Scripts/python -m pip install -r requirements.txt` (fully pinned).
 - Tests: `.venv/Scripts/python -m pytest -q` (everything),
   `-m "not data"` (no processed data needed), `-m data` (data-backed rule tests).
+  CI (`.github/workflows/tests.yml`, GitHub Actions, Windows, Python 3.11) runs
+  `pytest -m "not data"` on every push and pull request to `main`; `data` tests run only
+  locally because `data/` is never committed. Keep CI free of secrets and network calls.
 - pandas is **1.5.x**: no pandas-2-only APIs (no `pd.ArrowDtype`, no copy-on-write,
   `DataFrame.map` doesn't exist — use `applymap`), numpy is 1.26.
 - VAEP learner: `lightgbm` (installed). xgboost is not installed.
@@ -330,7 +333,11 @@ Eligible for a rating iff `minutes >= MIN_MINUTES` (10.0).
   `reports/fpl_mapping.md`; FPL names (`known_name`/`web_name`) are short forms like "N.Jackson".
   Scheduled: Windows task "RatingSystem FPL gameweek" runs `scripts/run_gameweek.ps1` daily at
   09:00 with run-after-missed-start, logging to `logs/pipeline.log`; the pipeline's `--if-new`
-  and regression guard (`state.json`) make reruns safe.
+  and regression guard (`state.json`) make reruns safe. Any non-zero exit (checks failed, a
+  Python traceback, the venv Python missing) shows a Windows notification with the first failure
+  line and the log path, after the log is written; exit 0 is silent and a notification failure
+  never changes the exit code. `RATING_SYSTEM_NOTIFY=log|fail` exists for
+  `tests/test_run_gameweek_script.py` (Windows only).
 - `export_web.py`: `match_payload(match_id) -> dict` (2015/16, both methods),
   `validate_payload(payload)` (raises `ValueError`), `export_season(out_dir=web/data)`
   writing `web/data/index.json` and one JSON per match.

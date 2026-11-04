@@ -1,5 +1,7 @@
 # Premier League player ratings
 
+[![tests](https://github.com/ethansye19/pl-player-ratings/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/ethansye19/pl-player-ratings/actions/workflows/tests.yml)
+
 Match-by-match player ratings on a **3.0–10.0 scale** for every Premier League match of
 2015/16. The **headline rating is the baseline**; a second, experimental method runs alongside
 for comparison:
@@ -271,8 +273,11 @@ clubs they played for and changed no rating (`reports/fpl_mapping.md`).
 A PowerShell wrapper (`scripts/run_gameweek.ps1`) runs it from Task Scheduler once a day. It
 does nothing when the latest finished gameweek is already published, writes nothing when a
 check fails, and refuses to replace published output with an older gameweek or with fewer
-fixtures or rated rows. Current-season output lives under `web/data/current/`, which is
-local only: the public page carries the 2015/16 season.
+fixtures or rated rows. When a run fails, whether a check failed, Python crashed or the venv is
+missing, the wrapper also shows a Windows notification with the first failure line and the path
+of `logs/pipeline.log`. A run that publishes or has nothing to do stays silent. Current-season
+output lives under `web/data/current/`, which is local only: the public page carries the 2015/16
+season.
 
 ## Known limitations
 
@@ -325,6 +330,12 @@ py -3.11 -m venv .venv
 .venv\Scripts\python -m pytest -q -m "not data"           # tests that need no downloaded data
 ```
 
+GitHub Actions runs those same tests (`pytest -m "not data"`) with Python 3.11 on Windows for
+every push and pull request to `main` (`.github/workflows/tests.yml`), with no secrets and no
+network access in the tests. The tests marked `data` cannot run there: they check the processed
+2015/16 season, and `data/` is never committed. Run the full suite locally after building the
+data (below).
+
 Reproduce the 2015/16 ratings from scratch (the download is about 1.1 GB; VAEP training
 takes a few minutes):
 
@@ -362,7 +373,9 @@ committed folder. GitHub Pages serves `docs/` from the `main` branch.
 
 To schedule the gameweek pipeline on Windows, register `scripts\run_gameweek.ps1` with Task
 Scheduler (daily, with "run as soon as possible after a missed start"); the script header
-explains its exit codes and the log it writes to `logs/pipeline.log`.
+explains its exit codes (0 = published or nothing to do, 1 = failed), the log it writes to
+`logs/pipeline.log`, and the notification it shows when a run fails. The notification appears
+only while you are logged on, which is when an interactive task runs.
 
 ## Repository layout
 
